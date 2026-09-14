@@ -269,11 +269,12 @@ def test_checklist_quiet_on_empty_scan():
 def test_checklist_candidate_counts_as_surface_for_emission():
     # A checklist candidate alone (e.g. a resolver call in a guard-util
     # file with no handler or sink in the scanned slice) still emits, so
-    # checklist-tier corpus instances stay validatable (R17). The verdict
-    # still reports no handler/sink surface.
+    # checklist-tier corpus instances stay validatable (R17). Checklist
+    # evidence is itself MCP surface: the verdict must not claim "no MCP
+    # surface detected" next to a nonempty checklist.
     result = classify_results(scan([checklist_hit("G7", "x.py", 3)]))
     assert len(result["checklist"]) == 1
-    assert result["coverage"]["verdict"] == "no_mcp_surface_detected"
+    assert result["coverage"]["verdict"] == "surface_detected"
 
 
 def test_checklist_emitted_with_surface():
@@ -353,6 +354,196 @@ def test_is_test_path():
     assert is_test_path("lib/foo_test.py")
     assert not is_test_path("src/server.py")
     assert not is_test_path("src/contest.py")
+
+
+def mk_result_with_lines(check_id, path, start, lines, metadata=None):
+    """Result whose matched source text is supplied explicitly."""
+    r = mk_result(check_id, path, start, metadata=metadata)
+    r["extra"]["lines"] = lines
+    return r
+
+
+def test_unrelated_complete_guard_does_not_launder_site():
+    # A guard-shaped call on an unrelated value in the same handler must
+    # not launder a raw unguarded fetch into recognized-complete.
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 16),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    15,
+                    "    return requests.get(url).text",
+                    {"probe_role": "network_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.g0",
+                    "srv.py",
+                    15,
+                    "    return requests.get(url).text",
+                    {"guard_class": "G0"},
+                ),
+                mk_result_with_lines(
+                    "probe.complete",
+                    "srv.py",
+                    12,
+                    '    base = pinned_request("https://example.com")',
+                    {"probe_role": "complete_guard"},
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["G0"]
+
+
+def test_bound_complete_guard_resolves_recognized():
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 16),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    15,
+                    "    return requests.get(url).text",
+                    {"probe_role": "network_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.g0",
+                    "srv.py",
+                    15,
+                    "    return requests.get(url).text",
+                    {"guard_class": "G0"},
+                ),
+                mk_result_with_lines(
+                    "probe.complete",
+                    "srv.py",
+                    12,
+                    "    url = ensure_public_url(url)",
+                    {"probe_role": "complete_guard"},
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "recognized_complete"
+
+
+def test_unrelated_validation_probe_does_not_downgrade():
+    # A check on an unrelated identifier is not evidence of URL
+    # validation; the site stays G0 rather than unrecognized-guard.
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 16),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    15,
+                    "    return requests.get(url).text",
+                    {"probe_role": "network_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.g0",
+                    "srv.py",
+                    15,
+                    "    return requests.get(url).text",
+                    {"guard_class": "G0"},
+                ),
+                mk_result_with_lines(
+                    "probe.validation",
+                    "srv.py",
+                    12,
+                    "    check_quota(user_id)",
+                    {"probe_role": "intervening_validation"},
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["G0"]
+
+
+def test_bound_validation_probe_is_unrecognized():
+    result = classify_results(
+        scan(
+            [
+                handler("srv.py", 10, 16),
+                mk_result_with_lines(
+                    "probe.sink",
+                    "srv.py",
+                    15,
+                    "    return requests.get(url).text",
+                    {"probe_role": "network_sink"},
+                ),
+                mk_result_with_lines(
+                    "rules.python.g0",
+                    "srv.py",
+                    15,
+                    "    return requests.get(url).text",
+                    {"guard_class": "G0"},
+                ),
+                mk_result_with_lines(
+                    "probe.validation",
+                    "srv.py",
+                    12,
+                    "    url = check_allowlist(url)",
+                    {"probe_role": "intervening_validation"},
+                ),
+            ],
+            scanned=["srv.py"],
+        )
+    )
+    [site] = result["sites"]
+    assert site["resolution"] == "unrecognized_guard"
+
+
+def test_null_result_locations_do_not_crash():
+    # Malformed semgrep records (start/end null or missing) degrade to
+    # line 0 rather than AttributeError.
+    r = mk_result("rules.python.g0", "srv.py", 5, metadata={"guard_class": "G0"})
+    r["start"] = None
+    r["end"] = None
+    result = classify_results(scan([r], scanned=["srv.py"]))
+    [site] = result["sites"]
+    assert site["resolution"] == "deterministic"
+    assert site["classes"] == ["G0"]
+
+
+def test_all_errors_no_scanned_is_analysis_incomplete():
+    result = classify_results(
+        scan([], scanned=[], errors=[{"path": "a.py", "message": "boom"}])
+    )
+    assert result["coverage"]["verdict"] == "analysis_incomplete"
+
+
+def test_errors_with_scanned_files_keep_surface_verdict():
+    result = classify_results(
+        scan(
+            [handler("a.py", 1, 5)],
+            scanned=["a.py"],
+            errors=[{"path": "b.py", "message": "parse error"}],
+        )
+    )
+    assert result["coverage"]["verdict"] == "surface_detected"
+    assert result["coverage"]["parse_failures"] == [
+        {"path": "b.py", "message": "parse error"}
+    ]
+
+
+def test_excluded_dirs_surfaced_in_coverage():
+    result = classify_results(
+        scan([handler("a.py", 1, 5)], scanned=["a.py"]),
+        excluded_dirs=["vendor", "dist"],
+    )
+    assert result["coverage"]["excluded_dirs"] == ["dist", "vendor"]
 
 
 def test_sites_sorted_by_path_line():

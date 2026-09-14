@@ -23,10 +23,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
+import re
 import sys
+import tempfile
 import urllib.error
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CORPUS = REPO_ROOT / "corpus"
@@ -37,9 +40,73 @@ EXPECTED_CSV = CORPUS / "EXPECTEDRESULTS.csv"
 RAW_URL = "https://raw.githubusercontent.com/{repo}/{sha}/{path}"
 USER_AGENT = "mcp-ssrf-audit-corpus-fetcher/1.0"
 TIMEOUT = 30
+# A corpus sample is source code; anything past this is not a file we
+# vendored on purpose.
+MAX_FILE_BYTES = 2 * 1024 * 1024
+
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+# instance_id doubles as a directory name under corpus/_fetched.
+INSTANCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
-def load_manifest() -> list[dict]:
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects.
+
+    The pin guarantee (content addressed by <repo>/<sha>/<path>) only
+    holds while the request stays on raw.githubusercontent.com; a
+    redirect would serve bytes the manifest did not pin.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def _fail(msg: str) -> "SystemExit":
+    return SystemExit(f"fetch_corpus: {msg}")
+
+
+def validate_row(row: dict, line: int) -> None:
+    """Reject manifest rows that could fetch or write outside the pin.
+
+    Raises SystemExit (the script's error channel) on the first problem.
+    """
+    where = f"manifest.jsonl line {line} ({row.get('sample_id', '?')})"
+    sha = row.get("sha", "")
+    if not SHA_RE.match(str(sha)):
+        raise _fail(
+            f"{where}: sha must be a full 40-char commit hex, got {sha!r}"
+        )
+    repo = row.get("repo", "")
+    if not REPO_RE.match(str(repo)):
+        raise _fail(
+            f"{where}: repo must be 'owner/name', got {repo!r}"
+        )
+    iid = row.get("instance_id", "")
+    if not INSTANCE_ID_RE.match(str(iid)) or ".." in str(iid):
+        raise _fail(
+            f"{where}: instance_id must be a single safe directory "
+            f"name, got {iid!r}"
+        )
+    paths = row.get("paths")
+    if not isinstance(paths, list) or not paths:
+        raise _fail(f"{where}: paths must be a nonempty list")
+    for p in paths:
+        pure = PurePosixPath(str(p))
+        if not isinstance(p, str) or pure.is_absolute() or ".." in pure.parts:
+            raise _fail(
+                f"{where}: paths entries must be relative paths "
+                f"without '..' segments, got {p!r}"
+            )
+    dest = (FETCHED_ROOT / iid).resolve()
+    if FETCHED_ROOT.resolve() not in dest.parents:
+        raise _fail(f"{where}: instance_id escapes corpus/_fetched")
+
+
+def load_manifest() -> list[tuple[int, dict]]:
     rows = []
     with MANIFEST.open() as f:
         for i, line in enumerate(f, 1):
@@ -47,9 +114,11 @@ def load_manifest() -> list[dict]:
             if not line:
                 continue
             try:
-                rows.append(json.loads(line))
+                row = json.loads(line)
             except json.JSONDecodeError as e:
-                sys.exit(f"manifest.jsonl line {i}: invalid JSON: {e}")
+                raise _fail(f"manifest.jsonl line {i}: invalid JSON: {e}")
+            validate_row(row, i)
+            rows.append((i, row))
     return rows
 
 
@@ -65,7 +134,7 @@ def sha_resolves(repo: str, sha: str, probe_path: str) -> bool | None:
         url, method="HEAD", headers={"User-Agent": USER_AGENT}
     )
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        with _OPENER.open(req, timeout=TIMEOUT) as resp:
             return resp.status == 200
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -75,31 +144,52 @@ def sha_resolves(repo: str, sha: str, probe_path: str) -> bool | None:
         raise
 
 
+def _write_atomic(dest: Path, body: bytes) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=".fetch-")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(body)
+        os.replace(tmp, dest)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def download_file(repo: str, sha: str, path: str, dest: Path) -> None:
     url = RAW_URL.format(repo=repo, sha=sha, path=urllib.request.quote(path))
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        body = resp.read()
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(body)
+    with _OPENER.open(req, timeout=TIMEOUT) as resp:
+        body = resp.read(MAX_FILE_BYTES + 1)
+    if len(body) > MAX_FILE_BYTES:
+        raise OSError(
+            f"{path}: upstream file exceeds {MAX_FILE_BYTES} bytes"
+        )
+    _write_atomic(dest, body)
 
 
-def materialize(row: dict) -> tuple[int, str]:
-    """Fetch one instance's files. Returns (file_count, dest_dir)."""
-    instance_id = row["instance_id"]
+def materialize(rows: list[dict]) -> tuple[int, str]:
+    """Fetch one instance's files. Returns (file_count, dest_dir).
+
+    ``rows`` are all manifest rows sharing one instance_id; their path
+    lists are unioned so two sample rows pointing at the same instance
+    cannot silently drop each other's files.
+    """
+    instance_id = rows[0]["instance_id"]
     dest_dir = FETCHED_ROOT / instance_id
-    count = 0
-    for path in row["paths"]:
-        dest = dest_dir / path
-        download_file(row["repo"], row["sha"], path, dest)
-        count += 1
+    paths = sorted({p for row in rows for p in row["paths"]})
+    for path in paths:
+        download_file(rows[0]["repo"], rows[0]["sha"], path, dest_dir / path)
     receipt = {
         "instance_id": instance_id,
-        "repo": row["repo"],
-        "sha": row["sha"],
+        "repo": rows[0]["repo"],
+        "sha": rows[0]["sha"],
         "fetched_with": "scripts/fetch_corpus.py",
-        "sample_ids": [row["sample_id"]],
-        "license_spdx": row["license_spdx"],
+        "sample_ids": sorted({row["sample_id"] for row in rows}),
+        "license_spdx": rows[0].get("license_spdx"),
     }
     receipt_path = dest_dir / ".fetched.json"
     if receipt_path.exists():
@@ -110,82 +200,120 @@ def materialize(row: dict) -> tuple[int, str]:
             )
         except json.JSONDecodeError:
             pass
-    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
-    return count, str(dest_dir.relative_to(REPO_ROOT))
+    _write_atomic(
+        receipt_path, (json.dumps(receipt, indent=2) + "\n").encode()
+    )
+    return len(paths), str(dest_dir.relative_to(REPO_ROOT))
 
 
 def is_materialized(row: dict) -> bool:
     if row["source"] == "vendored":
-        return all((REPO_ROOT / p).is_file() for p in row.get("corpus_paths", []))
+        return all(
+            (REPO_ROOT / p).is_file() for p in row.get("corpus_paths", [])
+        )
     dest = FETCHED_ROOT / row["instance_id"]
     return all((dest / p).is_file() for p in row["paths"])
 
 
 def emit_expected(rows: list[dict]) -> None:
     """Regenerate EXPECTEDRESULTS.csv: one row per labeled corpus file."""
-    with EXPECTED_CSV.open("w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(
-            [
-                "sample_id",
-                "instance_id",
-                "repo",
-                "sha",
-                "file",
-                "language",
-                "expected",
-                "tier",
-                "source",
-                "materialized",
-            ]
-        )
-        for row in rows:
-            materialized = "yes" if is_materialized(row) else "no"
-            expected = ";".join(row["expected"])
-            if row["source"] == "fetched":
-                files = [
-                    str(Path("corpus") / "_fetched" / row["instance_id"] / p)
-                    for p in row["paths"]
+    fd, tmp = tempfile.mkstemp(
+        dir=EXPECTED_CSV.parent, prefix=".expected-", suffix=".csv"
+    )
+    try:
+        with os.fdopen(fd, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(
+                [
+                    "sample_id",
+                    "instance_id",
+                    "repo",
+                    "sha",
+                    "file",
+                    "language",
+                    "expected",
+                    "tier",
+                    "source",
+                    "materialized",
                 ]
-            else:
-                files = row.get("corpus_paths", [])
-            for file in files:
-                w.writerow(
-                    [
-                        row["sample_id"],
-                        row["instance_id"],
-                        row["repo"],
-                        row["sha"],
-                        file,
-                        row["language"],
-                        expected,
-                        row["tier"],
-                        row["source"],
-                        materialized,
+            )
+            for row in rows:
+                materialized = "yes" if is_materialized(row) else "no"
+                expected = ";".join(row["expected"])
+                if row["source"] == "fetched":
+                    files = [
+                        str(
+                            Path("corpus")
+                            / "_fetched"
+                            / row["instance_id"]
+                            / p
+                        )
+                        for p in row["paths"]
                     ]
-                )
+                else:
+                    files = row.get("corpus_paths", [])
+                for file in files:
+                    w.writerow(
+                        [
+                            row["sample_id"],
+                            row["instance_id"],
+                            row["repo"],
+                            row["sha"],
+                            file,
+                            row["language"],
+                            expected,
+                            row["tier"],
+                            row["source"],
+                            materialized,
+                        ]
+                    )
+        os.replace(tmp, EXPECTED_CSV)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def cmd_check(rows: list[dict]) -> int:
     """Verify pinned SHAs resolve upstream; report materialization state."""
     seen: set[tuple[str, str]] = set()
     bad = 0
+    unverified = 0
     for row in rows:
         key = (row["repo"], row["sha"])
         if key in seen:
             continue
         seen.add(key)
-        ok = sha_resolves(row["repo"], row["sha"], row["paths"][0])
+        detail = ""
+        try:
+            ok = sha_resolves(row["repo"], row["sha"], row["paths"][0])
+        except (urllib.error.URLError, OSError) as e:
+            ok = None
+            detail = f" [{e}]"
         status = {True: "OK", False: "MISSING", None: "UNVERIFIED"}[ok]
-        print(f"{status:10s} {row['repo']}@{row['sha'][:12]} ({row['sample_id']})")
+        print(
+            f"{status:10s} {row['repo']}@{row['sha'][:12]} "
+            f"({row['sample_id']}){detail}"
+        )
         if ok is False:
             bad += 1
+        elif ok is None:
+            unverified += 1
     print()
     for row in rows:
         state = "materialized" if is_materialized(row) else "unmaterialized"
         print(f"{state:15s} {row['sample_id']} [{row['source']}, {row['tier']}]")
     if bad:
         print(f"\n{bad} pinned SHA(s) did not resolve upstream")
+    if unverified:
+        print(
+            f"{unverified} pinned SHA(s) could not be verified "
+            "(rate-limited or upstream error)"
+        )
+    # A check that verified nothing must not exit green.
+    if bad or unverified or not seen:
         return 1
     return 0
 
@@ -200,7 +328,7 @@ def main() -> int:
                     help="regenerate corpus/EXPECTEDRESULTS.csv and exit")
     args = ap.parse_args()
 
-    rows = load_manifest()
+    rows = [row for _line, row in load_manifest()]
 
     if args.emit_expected:
         emit_expected(rows)
@@ -219,19 +347,25 @@ def main() -> int:
         if not fetched:
             sys.exit(f"no fetched manifest row matches --only {args.only!r}")
 
-    failures = 0
-    done: set[str] = set()
+    # Group by instance_id so every row's paths materialize even when
+    # two samples share one upstream instance.
+    by_instance: dict[str, list[dict]] = {}
     for row in fetched:
-        iid = row["instance_id"]
-        if iid in done:
-            continue
+        by_instance.setdefault(row["instance_id"], []).append(row)
+
+    failures = 0
+    for iid, group in sorted(by_instance.items()):
         try:
-            if sha_resolves(row["repo"], row["sha"], row["paths"][0]) is False:
-                print(f"FAIL {iid}: sha {row['sha'][:12]} does not resolve on {row['repo']}")
+            if sha_resolves(
+                group[0]["repo"], group[0]["sha"], group[0]["paths"][0]
+            ) is False:
+                print(
+                    f"FAIL {iid}: sha {group[0]['sha'][:12]} does not "
+                    f"resolve on {group[0]['repo']}"
+                )
                 failures += 1
                 continue
-            n, dest = materialize(row)
-            done.add(iid)
+            n, dest = materialize(group)
             print(f"ok   {iid}: {n} file(s) -> {dest}")
         except (urllib.error.URLError, OSError) as e:
             print(f"FAIL {iid}: {e}")

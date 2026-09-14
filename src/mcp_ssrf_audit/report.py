@@ -59,7 +59,9 @@ def actionable_sites(result: dict) -> list[dict]:
 
 
 def exit_code(result: dict) -> int:
-    """KTD4: 1 when any deterministic finding or unrecognized item, else 0."""
+    """KTD4: 2 analysis incomplete, 1 actionable site, 0 otherwise."""
+    if result["coverage"]["verdict"] == "analysis_incomplete":
+        return 2
     return 1 if actionable_sites(result) else 0
 
 
@@ -207,10 +209,21 @@ def render_text(
         )
         for f in cov["target_ignore_files"]:
             out.append(f"    {f}")
+    if cov.get("excluded_dirs"):
+        out.append(
+            "  tool-excluded directories present (not scanned):"
+        )
+        for d in cov["excluded_dirs"]:
+            out.append(f"    {d}")
     sbr = cov["sites_by_resolution"]
     joined = ", ".join(f"{k}={sbr[k]}" for k in sorted(sbr))
     out.append(f"  site resolution: {joined or 'none'}")
-    if cov["verdict"] == "no_mcp_surface_detected":
+    if cov["verdict"] == "analysis_incomplete":
+        out.append(
+            "  verdict: analysis incomplete (no files were successfully "
+            "analyzed; see parse failures)"
+        )
+    elif cov["verdict"] == "no_mcp_surface_detected":
         out.append("  verdict: no MCP surface detected")
     else:
         out.append("  verdict: MCP surface detected")

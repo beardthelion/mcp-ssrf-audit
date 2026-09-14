@@ -23,11 +23,19 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         print(f"mcp-ssrf-audit: {exc}", file=sys.stderr)
         return 2
 
-    result = classify.classify_results(
-        run.data,
-        target_ignore_files=run.target_ignore_files,
-        target_root=run.target,
-    )
+    try:
+        result = classify.classify_results(
+            run.data,
+            target_ignore_files=run.target_ignore_files,
+            excluded_dirs=run.excluded_dirs,
+            target_root=run.target,
+        )
+    except Exception as exc:
+        print(
+            f"mcp-ssrf-audit: failed to classify semgrep output: {exc}",
+            file=sys.stderr,
+        )
+        return 2
     if args.json:
         sys.stdout.write(
             report.render_json(
@@ -55,6 +63,9 @@ def _cmd_corpus_validate(args: argparse.Namespace) -> int:
     except (corpus.CorpusError, runner.ScanError) as exc:
         print(f"mcp-ssrf-audit: {exc}", file=sys.stderr)
         return 2
+    except Exception as exc:
+        print(f"mcp-ssrf-audit: corpus validation failed: {exc}", file=sys.stderr)
+        return 2
     if args.json:
         sys.stdout.write(corpus.render_json(rep, ruleset_version=__version__))
     else:
@@ -73,11 +84,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="store_true", help="print version and exit")
     sub = parser.add_subparsers(dest="command")
 
+    def positive_float(raw: str) -> float:
+        val = float(raw)
+        if val <= 0:
+            raise argparse.ArgumentTypeError(
+                f"--timeout must be positive seconds, got {raw!r}"
+            )
+        return val
+
     def add_common(sub: argparse.ArgumentParser) -> None:
         sub.add_argument("--json", action="store_true", help="emit JSON output")
         sub.add_argument(
             "--timeout",
-            type=float,
+            type=positive_float,
             default=runner.DEFAULT_TIMEOUT,
             help="per-file semgrep analysis timeout in seconds (default: %(default)s)",
         )

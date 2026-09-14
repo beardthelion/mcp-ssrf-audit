@@ -32,7 +32,14 @@ jobs:
         run: pytest
       - name: Corpus is never collected or imported
         run: |
-          pytest --collect-only -q | grep -E "corpus/" && exit 1 || true
+          if pytest --collect-only -q | grep -E "corpus/"; then
+            echo "corpus files were collected by pytest" >&2
+            exit 1
+          fi
+      - name: Materialize fetched corpus samples
+        run: python3 scripts/fetch_corpus.py
+      - name: Corpus validation gate
+        run: mcp-ssrf-audit corpus-validate --corpus corpus
       - name: Build single-file rules bundle
         run: |
           mkdir -p dist
@@ -54,3 +61,14 @@ jobs:
           out.write_text("rules:\n" + "\n".join(body) + "\n")
           print(f"wrote {out}")
           PY
+      - name: Validate the bundle parses and its rules run
+        run: |
+          semgrep validate dist/mcp-ssrf-audit.yaml
+          echo 'import requests
+          mcp = None
+          @mcp.tool()
+          def f(url):
+              return requests.get(url).text' > /tmp/bundle-target.py
+          semgrep scan --config dist/mcp-ssrf-audit.yaml --json \
+            --metrics=off --disable-version-check /tmp/bundle-target.py \
+            | grep -q mcp-ssrf-audit

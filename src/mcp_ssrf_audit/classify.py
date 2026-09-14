@@ -7,11 +7,22 @@ enclosing handler (the site) and resolves each site in precedence order:
    than the no-guard class) wins; the raw no-guard finding at the same
    site is suppressed so a scheme-only site reports its weak class and
    never double-labels as G0;
-2. otherwise a complete-guard probe hit yields recognized-complete;
-3. otherwise an intervening-validation probe hit yields
-   unrecognized-guard ("guard detected, shape unrecognized, manual
-   review");
-4. otherwise the site is a no-guard finding.
+2. otherwise a raw no-guard finding plus a *bound* complete-guard probe
+   hit yields recognized-complete;
+3. otherwise a raw no-guard finding plus a *bound* intervening-validation
+   probe hit yields unrecognized-guard ("guard detected, shape
+   unrecognized, manual review");
+4. otherwise the raw no-guard finding stands as a G0 finding.
+
+A probe hit is *bound* when identifiers in its matched line overlap the
+sink call's first-argument identifiers: ``ensure_public_url(url)`` binds
+to ``requests.get(url)``; ``pinned_request("https://example.com")`` or
+``check_quota(1)`` in the same extent do not, so an unrelated
+guard-shaped call can neither launder a site into recognized-complete
+nor downgrade it to unrecognized-guard. A complete-guard probe hit with
+no raw no-guard finding means the by-side-effect sanitizer cleaned the
+tainted value, so the site resolves recognized-complete without the
+binding check.
 
 The module is data-driven off rule metadata: it reads
 ``metadata.guard_class`` and ``metadata.probe_role`` and never names a
@@ -20,6 +31,7 @@ rule id, so class rules added later integrate without code changes.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -77,6 +89,24 @@ _EXT_LANGUAGE = {
     ".cjs": "javascript",
 }
 
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# Keywords and literals excluded from identifier extraction when binding
+# probe hits to sink arguments.
+_NONARG_WORDS = frozenset(
+    {
+        "if", "else", "elif", "raise", "throw", "return", "not", "and",
+        "or", "in", "is", "new", "const", "let", "var", "def", "await",
+        "async", "for", "while", "try", "except", "finally", "with",
+        "True", "False", "None", "true", "false", "null", "undefined",
+        "function",
+    }
+)
+
+# Control characters stripped from matched text before it is rendered as
+# a site label or checklist message in terminal output.
+_CTRL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
 
 def is_test_path(path: str) -> bool:
     """True when ``path`` sits under a test/example tree or names one."""
@@ -105,38 +135,31 @@ def class_sort_key(cls: str) -> tuple[int, str]:
 
 
 def _loc(result: dict) -> dict:
+    start = result.get("start") or {}
     return {
         "path": result.get("path", ""),
-        "line": result.get("start", {}).get("line", 0),
-        "col": result.get("start", {}).get("col", 0),
+        "line": start.get("line", 0),
+        "col": start.get("col", 0),
     }
 
 
 def _extent(result: dict) -> tuple[int, int]:
-    start = result.get("start", {}).get("line", 0)
-    end = result.get("end", {}).get("line", start)
+    start = (result.get("start") or {}).get("line", 0)
+    end = (result.get("end") or {}).get("line", start)
     return start, end
 
 
-def _function_hint(
-    result: dict,
+def _file_lines(
+    rel: str,
     target_root: Path | None,
     lines_cache: dict[str, list[str] | None],
-) -> str:
-    """First line of the matched region, trimmed, for site labeling.
+) -> list[str] | None:
+    """Read a result file's lines once, cached per resolved path.
 
-    Semgrep's JSON leaves ``extra.lines`` as "requires login", so the
-    label line is read from the target file when a root is given. Each
-    file's lines are loaded at most once per call into ``lines_cache``.
+    Semgrep reports paths as given on the command line: absolute targets
+    yield absolute result paths, relative targets yield cwd-relative
+    ones. Try both the raw path and the target-root join.
     """
-    lines = ((result.get("extra") or {}).get("lines") or "").strip()
-    if lines and lines != "requires login":
-        return lines.splitlines()[0][:80]
-    line_no = result.get("start", {}).get("line", 0)
-    rel = result.get("path", "")
-    # Semgrep reports paths as given on the command line: absolute targets
-    # yield absolute result paths, relative targets yield cwd-relative
-    # ones. Try both the raw path and the target-root join.
     candidates = [Path(rel)]
     if target_root is not None:
         candidates.append(target_root / rel)
@@ -157,9 +180,89 @@ def _function_hint(
                 ).splitlines()
             except OSError:
                 lines_cache[key] = None
-        file_lines = lines_cache[key]
-        if file_lines is not None and 0 < line_no <= len(file_lines):
-            return file_lines[line_no - 1].strip()[:80]
+        if lines_cache[key] is not None:
+            return lines_cache[key]
+    return None
+
+
+def _hit_text(
+    result: dict,
+    target_root: Path | None,
+    lines_cache: dict[str, list[str] | None],
+) -> str:
+    """Full source text of the lines spanned by a result's match.
+
+    Prefers the target file so an enclosing assignment target is visible
+    (``checked = ensure_public_url(url)``); falls back to semgrep's
+    ``extra.lines`` when the file is unreadable.
+    """
+    start = result.get("start") or {}
+    end = result.get("end") or {}
+    file_lines = _file_lines(result.get("path", ""), target_root, lines_cache)
+    if file_lines is not None:
+        s_line, e_line = start.get("line", 0), end.get("line", 0)
+        if 0 < s_line <= len(file_lines):
+            e_line = min(max(e_line, s_line), len(file_lines))
+            return "\n".join(file_lines[s_line - 1 : e_line])
+    return (result.get("extra") or {}).get("lines") or ""
+
+
+def _first_arg_idents(text: str) -> set[str]:
+    """Identifiers in the first top-level argument of a call expression.
+
+    For ``requests.get(url, headers=h)`` this is ``{url}``: the URL
+    argument, not incidental kwargs. Falls back to every identifier in
+    the text when the hit is not a call (e.g. an ``if`` check-and-throw).
+    """
+    i = text.find("(")
+    if i == -1:
+        region = text
+    else:
+        depth = 0
+        end = len(text)
+        for j in range(i, len(text)):
+            c = text[j]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0:
+                    end = j
+                    break
+            elif c == "," and depth == 1:
+                end = j
+                break
+        region = text[i + 1 : end]
+    return {
+        m for m in _IDENT.findall(region) if m not in _NONARG_WORDS
+    }
+
+
+def _text_idents(text: str) -> set[str]:
+    return {
+        m for m in _IDENT.findall(text) if m not in _NONARG_WORDS
+    }
+
+
+def _function_hint(
+    result: dict,
+    target_root: Path | None,
+    lines_cache: dict[str, list[str] | None],
+) -> str:
+    """First line of the matched region, trimmed, for site labeling.
+
+    Semgrep's JSON leaves ``extra.lines`` as "requires login", so the
+    label line is read from the target file when a root is given. Control
+    characters are stripped: matched text is attacker-controlled bytes on
+    its way to a terminal.
+    """
+    lines = ((result.get("extra") or {}).get("lines") or "").strip()
+    if lines and lines != "requires login":
+        return _CTRL_CHARS.sub("", lines.splitlines()[0])[:80]
+    line_no = (result.get("start") or {}).get("line", 0)
+    file_lines = _file_lines(result.get("path", ""), target_root, lines_cache)
+    if file_lines is not None and 0 < line_no <= len(file_lines):
+        return _CTRL_CHARS.sub("", file_lines[line_no - 1].strip())[:80]
     return ""
 
 
@@ -170,12 +273,18 @@ class _Site:
     end_line: int
     label: str = ""
     sinks: list[dict] = field(default_factory=list)
+    # Raw sink results, kept for argument-identifier binding.
+    sink_results: list[dict] = field(default_factory=list)
+    # Identifiers from sink first arguments; synthetic sites (a class
+    # finding outside every handler extent) seed this from the finding's
+    # own call text.
+    sink_arg_idents: set[str] = field(default_factory=set)
     # guard_class -> list of finding locations at this site
     class_locations: dict[str, list[dict]] = field(default_factory=dict)
     has_raw_no_guard: bool = False
     no_guard_locations: list[dict] = field(default_factory=list)
-    complete_guard_hits: list[dict] = field(default_factory=list)
-    validation_hits: list[dict] = field(default_factory=list)
+    complete_guard_results: list[dict] = field(default_factory=list)
+    validation_results: list[dict] = field(default_factory=list)
     resolution: str = ""
     test_path: bool = False
 
@@ -185,11 +294,12 @@ class _Site:
 
     @property
     def classes(self) -> list[str]:
-        return sorted(self.class_locations)
+        return sorted(self.class_locations, key=class_sort_key)
 
     def to_record(self) -> dict:
         guards: list[dict] = []
-        for loc in self.complete_guard_hits + self.validation_hits:
+        for r in self.complete_guard_results + self.validation_results:
+            loc = _loc(r)
             if loc not in guards:
                 guards.append(loc)
         return {
@@ -200,7 +310,8 @@ class _Site:
             "resolution": self.resolution,
             "classes": self.classes,
             "class_locations": {
-                cls: locs for cls, locs in sorted(self.class_locations.items())
+                cls: self.class_locations[cls]
+                for cls in sorted(self.class_locations, key=class_sort_key)
             },
             "sinks": self.sinks,
             "guard_locations": guards,
@@ -212,6 +323,7 @@ def classify_results(
     scan_data: dict,
     *,
     target_ignore_files: list[str] | None = None,
+    excluded_dirs: list[str] | None = None,
     target_root: str | Path | None = None,
 ) -> dict:
     """Resolve raw semgrep JSON into sites, checklist, and coverage.
@@ -289,20 +401,25 @@ def classify_results(
                 sinks_outside_handlers.append(loc)
             elif loc not in site.sinks:
                 site.sinks.append(loc)
+                site.sink_results.append(s)
 
     for path, hs in complete_hits.items():
         for h in hs:
             loc = _loc(h)
             site = site_for(path, loc["line"])
-            if site is not None and loc not in site.complete_guard_hits:
-                site.complete_guard_hits.append(loc)
+            if site is not None and loc not in [
+                _loc(r) for r in site.complete_guard_results
+            ]:
+                site.complete_guard_results.append(h)
 
     for path, vs in validation_hits.items():
         for v in vs:
             loc = _loc(v)
             site = site_for(path, loc["line"])
-            if site is not None and loc not in site.validation_hits:
-                site.validation_hits.append(loc)
+            if site is not None and loc not in [
+                _loc(r) for r in site.validation_results
+            ]:
+                site.validation_results.append(v)
 
     for cls, f in class_findings:
         loc = _loc(f)
@@ -319,6 +436,11 @@ def classify_results(
                 label=_function_hint(f, root, lines_cache),
                 test_path=is_test_path(f.get("path", "")),
             )
+            # The finding's own call is the site's sink for binding:
+            # guard arguments must overlap its first-argument identifiers.
+            site.sink_arg_idents = _first_arg_idents(
+                _hit_text(f, root, lines_cache)
+            )
             sites[site.key] = site
             sites_by_path.setdefault(site.path, []).append(site)
         if cls == NO_GUARD_CLASS:
@@ -330,27 +452,55 @@ def classify_results(
             if loc not in site.class_locations[cls]:
                 site.class_locations[cls].append(loc)
 
-    # Layered resolution per site (precedence: weak class > recognized
-    # complete > unrecognized guard > no guard). Sites with a sink but no
-    # tainted handler-input flow are recorded, not reported.
+    # Layered resolution per site (precedence: weak class > bound
+    # recognized-complete > bound unrecognized-guard > raw no-guard).
+    # Sites with a sink but no tainted handler-input flow are recorded,
+    # not reported. Binding: probe hits only upgrade or downgrade a
+    # no-guard site when their matched line shares an identifier with a
+    # sink call's first argument, so a guard-shaped call on an unrelated
+    # value can neither launder the site into recognized-complete nor
+    # relabel it unrecognized-guard.
     for site in sites.values():
-        if not site.sinks and not site.class_locations and not site.has_raw_no_guard:
+        if (
+            not site.sinks
+            and not site.class_locations
+            and not site.has_raw_no_guard
+        ):
             # Handler with no enumerated sink: a surface marker only.
             site.resolution = RESOLUTION_HANDLER_NO_SINK
             continue
+        sink_args = site.sink_arg_idents or {
+            ident
+            for s in site.sink_results
+            for ident in _first_arg_idents(
+                _hit_text(s, root, lines_cache)
+            )
+        }
+
+        def bound(results: list[dict]) -> bool:
+            if not sink_args:
+                return False
+            return any(
+                _text_idents(_hit_text(r, root, lines_cache)) & sink_args
+                for r in results
+            )
+
         if site.class_locations:
             site.resolution = RESOLUTION_DETERMINISTIC
         elif site.has_raw_no_guard:
-            if site.complete_guard_hits:
+            if bound(site.complete_guard_results):
                 site.resolution = RESOLUTION_RECOGNIZED_COMPLETE
-            elif site.validation_hits:
+            elif bound(site.validation_results):
                 site.resolution = RESOLUTION_UNRECOGNIZED
             else:
                 site.class_locations[NO_GUARD_CLASS] = [
                     dict(s) for s in site.no_guard_locations
                 ]
                 site.resolution = RESOLUTION_DETERMINISTIC
-        elif site.complete_guard_hits:
+        elif site.complete_guard_results:
+            # No raw no-guard finding means the by-side-effect sanitizer
+            # cleaned the tainted value itself; the guard vocabulary was
+            # seen at this site.
             site.resolution = RESOLUTION_RECOGNIZED_COMPLETE
         else:
             site.resolution = RESOLUTION_NO_FLOW
@@ -385,14 +535,16 @@ def classify_results(
     checklist.sort(key=lambda i: (class_sort_key(i["class"]), i["path"], i["line"]))
 
     # Coverage (R12). "MCP surface" for the verdict means recognized
-    # handlers or network sinks; checklist emission additionally counts
-    # checklist candidates as surface evidence.
+    # handlers, network sinks, or checklist candidates -- all three are
+    # SSRF-relevant evidence.
     scanned = (scan_data.get("paths") or {}).get("scanned") or []
     by_lang = Counter(_language_of(p) for p in scanned)
 
     handler_candidates = sum(len(v) for v in handlers.values())
     sinks_found = sum(len(v) for v in sinks.values())
-    mcp_surface = handler_candidates > 0 or sinks_found > 0
+    mcp_surface = (
+        handler_candidates > 0 or sinks_found > 0 or bool(checklist)
+    )
 
     parse_failures = [
         {
@@ -400,7 +552,19 @@ def classify_results(
             "message": e.get("message") or str(e.get("type") or e),
         }
         for e in (scan_data.get("errors") or [])
+        if isinstance(e, dict)
     ]
+
+    # A scan that produced only errors analyzed nothing: "no MCP surface
+    # detected" would claim the files were analyzed and clean, so an
+    # all-failed run reports analysis_incomplete (the CLI maps that to
+    # the operational-failure exit code).
+    if mcp_surface:
+        verdict = "surface_detected"
+    elif not scanned and parse_failures:
+        verdict = "analysis_incomplete"
+    else:
+        verdict = "no_mcp_surface_detected"
 
     by_resolution = Counter(s["resolution"] for s in site_records)
 
@@ -417,10 +581,9 @@ def classify_results(
         "parse_failures": parse_failures,
         "checklist_candidates": len(checklist),
         "target_ignore_files": list(target_ignore_files or []),
+        "excluded_dirs": sorted(excluded_dirs or []),
         "sites": site_records,
         "sites_by_resolution": by_resolution,
-        "verdict": (
-            "surface_detected" if mcp_surface else "no_mcp_surface_detected"
-        ),
+        "verdict": verdict,
     }
     return {"sites": site_records, "checklist": checklist, "coverage": coverage}

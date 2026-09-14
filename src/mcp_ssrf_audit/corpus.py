@@ -46,11 +46,12 @@ sample_id, files sorted by path, classes sorted numerically).
 from __future__ import annotations
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from mcp_ssrf_audit import TAXONOMY_VERSION, classify, runner
+from mcp_ssrf_audit import TAXONOMY_VERSION, __version__, classify, runner
 
 SCHEMA_VERSION = "mcp-ssrf-audit-corpus/v1"
 
@@ -59,11 +60,13 @@ CLEAN = "CLEAN"
 
 STATUS_CAUGHT = "caught"
 STATUS_MISSED = "missed"
+STATUS_ACCEPTED_MISS = "accepted-miss"
 STATUS_EXTRA = "misclassified-extra"
 STATUS_CLEAN = "clean"
 STATUS_PRECISION = "precision-failure"
 STATUS_CHECKLIST_EMITTED = "checklist-emitted"
 STATUS_CHECKLIST_MISSING = "checklist-missing"
+STATUS_SCAN_INCOMPLETE = "scan-incomplete"
 
 _REQUIRED_FIELDS = (
     "sample_id",
@@ -74,9 +77,12 @@ _REQUIRED_FIELDS = (
     "expected",
     "tier",
     "source",
+    "paths",
 )
 _VALID_TIERS = ("deterministic", "checklist")
 _VALID_SOURCES = ("vendored", "fetched")
+
+_CLASS_LABEL = re.compile(r"^G\d+$")
 
 
 class CorpusError(Exception):
@@ -139,10 +145,7 @@ def _validate_row(row: dict, manifest: Path, lineno: int) -> None:
         raise CorpusError(f"{where}: expected must be a nonempty list")
     for cls in expected:
         if cls != CLEAN and not (
-            isinstance(cls, str)
-            and len(cls) > 1
-            and cls[0] == "G"
-            and cls[1:].isdigit()
+            isinstance(cls, str) and _CLASS_LABEL.match(cls)
         ):
             raise CorpusError(
                 f"{where}: expected entries must be 'CLEAN' or 'G<N>', "
@@ -150,9 +153,48 @@ def _validate_row(row: dict, manifest: Path, lineno: int) -> None:
             )
     if CLEAN in expected and len(expected) > 1:
         raise CorpusError(f"{where}: CLEAN cannot be combined with G-classes")
-    corpus_paths = row.get("corpus_paths")
-    if not isinstance(corpus_paths, list) or not corpus_paths:
-        raise CorpusError(f"{where}: corpus_paths must be a nonempty list")
+    for key in ("corpus_paths", "paths"):
+        entries = row.get(key)
+        if not isinstance(entries, list) or not entries:
+            raise CorpusError(f"{where}: {key} must be a nonempty list")
+        for entry in entries:
+            p = PurePosixPath(str(entry))
+            if (
+                not isinstance(entry, str)
+                or p.is_absolute()
+                or ".." in p.parts
+            ):
+                raise CorpusError(
+                    f"{where}: {key} entries must be relative paths "
+                    f"without '..' segments, got {entry!r}"
+                )
+    accepted = row.get("accepted_misses")
+    if accepted is not None:
+        if not isinstance(accepted, dict):
+            raise CorpusError(
+                f"{where}: accepted_misses must be a mapping of "
+                "G-class to reason"
+            )
+        for cls, reason in accepted.items():
+            if not _CLASS_LABEL.match(str(cls)):
+                raise CorpusError(
+                    f"{where}: accepted_misses keys must be 'G<N>', "
+                    f"got {cls!r}"
+                )
+            if cls not in expected:
+                raise CorpusError(
+                    f"{where}: accepted_misses entry {cls!r} is not in "
+                    "the row's expected set"
+                )
+            if not isinstance(reason, str) or not reason.strip():
+                raise CorpusError(
+                    f"{where}: accepted_misses[{cls!r}] must carry a "
+                    "nonempty reason"
+                )
+        if CLEAN in expected:
+            raise CorpusError(
+                f"{where}: CLEAN rows cannot declare accepted_misses"
+            )
 
 
 def resolve_corpus_paths(
@@ -186,6 +228,11 @@ class FileScan:
     checklist: set[str] = field(default_factory=set)
     unrecognized_sites: int = 0
     semgrep_version: str | None = None
+    # Semgrep-reported errors for this file (parse failures, internal
+    # errors) and whether the file landed in paths.scanned at all. A
+    # file the engine could not analyze must never count as "clean".
+    parse_errors: int = 0
+    scanned: bool = True
 
 
 def scan_file(
@@ -205,9 +252,16 @@ def scan_file(
     result = classify.classify_results(
         run.data,
         target_ignore_files=run.target_ignore_files,
+        excluded_dirs=run.excluded_dirs,
         target_root=run.target,
     )
-    fs = FileScan(semgrep_version=run.semgrep_version)
+    fs = FileScan(
+        semgrep_version=run.semgrep_version,
+        parse_errors=len(run.data.get("errors") or []),
+        scanned=bool(
+            (run.data.get("paths") or {}).get("scanned") or []
+        ),
+    )
     for site in result["sites"]:
         if site["resolution"] == classify.RESOLUTION_DETERMINISTIC:
             fs.classes.update(site["classes"])
@@ -227,12 +281,15 @@ def _evaluate(
     reported: set[str] = set()
     emitted: set[str] = set()
     unrecognized = 0
+    unanalyzed = [
+        path for path, fs in files if fs.parse_errors or not fs.scanned
+    ]
     for _path, fs in files:
         reported |= fs.classes
         emitted |= fs.checklist
         unrecognized += fs.unrecognized_sites
 
-    missing = expected - reported
+    accepted_misses = row.get("accepted_misses") or {}
     extra = reported - expected
     notes: list[str] = []
     if unrecognized:
@@ -241,14 +298,33 @@ def _evaluate(
             "(manual review, not a finding)"
         )
 
-    if expected == {CLEAN}:
-        status = STATUS_PRECISION if reported else STATUS_CLEAN
+    if unanalyzed:
+        # The engine could not analyze one of the sample's files: it
+        # must not silently count as clean or missed.
+        status = STATUS_SCAN_INCOMPLETE
         missing_set: set[str] = set()
+        acknowledged_set: set[str] = set()
+        notes.append(
+            "unanalyzed file(s): " + ", ".join(sorted(unanalyzed))
+        )
+    elif expected == {CLEAN}:
+        status = STATUS_PRECISION if reported else STATUS_CLEAN
+        missing_set = set()
+        acknowledged_set = set()
     elif row["tier"] == "checklist":
         missing_set = expected - emitted
-        status = (
-            STATUS_CHECKLIST_MISSING if missing_set else STATUS_CHECKLIST_EMITTED
-        )
+        acknowledged_set = missing_set & accepted_misses.keys()
+        missing_set -= accepted_misses.keys()
+        if missing_set:
+            status = STATUS_CHECKLIST_MISSING
+        elif acknowledged_set:
+            status = STATUS_ACCEPTED_MISS
+        else:
+            status = STATUS_CHECKLIST_EMITTED
+        for cls in _sorted_classes(acknowledged_set):
+            notes.append(
+                f"accepted-miss {cls}: {accepted_misses[cls]}"
+            )
         if reported:
             notes.append(
                 f"extra-deterministic={_fmt_set(reported)} "
@@ -256,13 +332,21 @@ def _evaluate(
                 "reported, non-gating)"
             )
     else:
-        missing_set = missing
-        if missing:
+        missing_set = expected - reported
+        acknowledged_set = missing_set & accepted_misses.keys()
+        missing_set -= accepted_misses.keys()
+        if missing_set:
             status = STATUS_MISSED
+        elif acknowledged_set:
+            status = STATUS_ACCEPTED_MISS
         elif extra:
             status = STATUS_EXTRA
         else:
             status = STATUS_CAUGHT
+        for cls in _sorted_classes(acknowledged_set):
+            notes.append(
+                f"accepted-miss {cls}: {accepted_misses[cls]}"
+            )
 
     return {
         "sample_id": row["sample_id"],
@@ -276,6 +360,7 @@ def _evaluate(
         "reported": _sorted_classes(reported),
         "checklist_emitted": _sorted_classes(emitted),
         "missing": _sorted_classes(missing_set),
+        "accepted_misses": _sorted_classes(acknowledged_set),
         "extra": _sorted_classes(extra),
         "status": status,
         "notes": notes,
@@ -283,8 +368,10 @@ def _evaluate(
             {
                 "path": path,
                 "classes": _sorted_classes(fs.classes),
-                "checklist": _sorted_classes(fs.checklist),
+                "checklist_classes": _sorted_classes(fs.checklist),
                 "unrecognized_sites": fs.unrecognized_sites,
+                "parse_errors": fs.parse_errors,
+                "scanned": fs.scanned,
             }
             for path, fs in files
         ],
@@ -296,6 +383,7 @@ def validate_corpus(
     *,
     timeout: float = runner.DEFAULT_TIMEOUT,
     rules_dir: str | Path | None = None,
+    ruleset_version: str = __version__,
     scan_fn=None,
 ) -> dict:
     """Run the rule pack over every materialized corpus sample.
@@ -312,17 +400,17 @@ def validate_corpus(
     else:
         scan_one = scan_fn
 
-    cache: dict[str, FileScan | BaseException] = {}
+    cache: dict[str, FileScan | Exception] = {}
 
     def scan_cached(path: Path) -> FileScan:
         key = str(path)
         if key not in cache:
             try:
                 cache[key] = scan_one(path)
-            except BaseException as exc:
+            except Exception as exc:
                 cache[key] = exc
         val = cache[key]
-        if isinstance(val, BaseException):
+        if isinstance(val, Exception):
             raise val
         return val
 
@@ -363,7 +451,7 @@ def validate_corpus(
                         "instance_id": row["instance_id"],
                         "tier": row["tier"],
                         "reason": "not materialized",
-                        "missing": sorted(missing_paths),
+                        "missing_paths": sorted(missing_paths),
                     }
                 )
                 continue
@@ -380,6 +468,11 @@ def validate_corpus(
         except runner.ScanError as exc:
             raise CorpusError(
                 f"scan failed for sample {row['sample_id']}: {exc}"
+            ) from exc
+        except Exception as exc:
+            raise CorpusError(
+                f"scan of sample {row['sample_id']} raised "
+                f"{type(exc).__name__}: {exc}"
             ) from exc
         samples.append(_evaluate(row, scans))
 
@@ -432,9 +525,11 @@ def validate_corpus(
             "total": len(det),
             "caught": count(det, STATUS_CAUGHT),
             "missed": count(det, STATUS_MISSED),
+            "accepted_miss": count(det, STATUS_ACCEPTED_MISS),
             "misclassified_extra": count(det, STATUS_EXTRA),
             "clean": count(det, STATUS_CLEAN),
             "precision_failure": count(det, STATUS_PRECISION),
+            "scan_incomplete": count(det, STATUS_SCAN_INCOMPLETE),
             "by_class": {
                 cls: det_by_class[cls] for cls in _sorted_classes(det_by_class)
             },
@@ -443,8 +538,10 @@ def validate_corpus(
             "total": len(chk),
             "emitted": count(chk, STATUS_CHECKLIST_EMITTED),
             "missing": count(chk, STATUS_CHECKLIST_MISSING),
+            "accepted_miss": count(chk, STATUS_ACCEPTED_MISS),
             "clean": count(chk, STATUS_CLEAN),
             "precision_failure": count(chk, STATUS_PRECISION),
+            "scan_incomplete": count(chk, STATUS_SCAN_INCOMPLETE),
             "by_class": {
                 cls: chk_by_class[cls] for cls in _sorted_classes(chk_by_class)
             },
@@ -455,19 +552,25 @@ def validate_corpus(
     failures = (
         summary["deterministic"]["missed"]
         + summary["deterministic"]["precision_failure"]
+        + summary["deterministic"]["scan_incomplete"]
         + summary["checklist"]["missing"]
         + summary["checklist"]["precision_failure"]
+        + summary["checklist"]["scan_incomplete"]
     )
+    # A run that evaluated zero samples verified nothing: an
+    # all-skipped corpus is a failure, not a pass.
+    nothing_evaluated = not samples
     return {
         "schema_version": SCHEMA_VERSION,
         "taxonomy_version": TAXONOMY_VERSION,
+        "ruleset_version": ruleset_version,
         "corpus": str(corpus_dir),
         "semgrep_version": semgrep_version,
         "samples": samples,
         "skipped": skipped,
         "summary": summary,
-        "failures": failures,
-        "result": "fail" if failures else "pass",
+        "failures": failures + (1 if nothing_evaluated else 0),
+        "result": "fail" if failures or nothing_evaluated else "pass",
     }
 
 
@@ -494,6 +597,8 @@ def _render_sample_line(sample: dict) -> list[str]:
         )
     if s["missing"]:
         head += f" missing={_fmt_set(s['missing'])}"
+    if s["accepted_misses"]:
+        head += f" accepted-misses={_fmt_set(s['accepted_misses'])}"
     if s["extra"]:
         head += f" extra={_fmt_set(s['extra'])}"
     lines.append(head)
@@ -502,8 +607,10 @@ def _render_sample_line(sample: dict) -> list[str]:
         parts = []
         if f["classes"]:
             parts.append(f"deterministic={_fmt_set(f['classes'])}")
-        if f["checklist"]:
-            parts.append(f"checklist={_fmt_set(f['checklist'])}")
+        if f["checklist_classes"]:
+            parts.append(f"checklist={_fmt_set(f['checklist_classes'])}")
+        if not f["scanned"] or f["parse_errors"]:
+            parts.append("UNANALYZED")
         if f["unrecognized_sites"]:
             parts.append(
                 f"unrecognized-guard-sites={f['unrecognized_sites']}"
@@ -572,14 +679,16 @@ def render_text(report: dict, *, ruleset_version: str) -> str:
     out.append("-------")
     out.append(
         f"  deterministic: {d['total']} samples: {d['caught']} caught, "
-        f"{d['missed']} missed, {d['misclassified_extra']} "
-        f"misclassified-extra, {d['clean']} clean, "
-        f"{d['precision_failure']} precision-failure"
+        f"{d['missed']} missed, {d['accepted_miss']} accepted-miss, "
+        f"{d['misclassified_extra']} misclassified-extra, "
+        f"{d['clean']} clean, {d['precision_failure']} "
+        f"precision-failure, {d['scan_incomplete']} scan-incomplete"
     )
     out.append(
         f"  checklist:     {c['total']} samples: {c['emitted']} emitted, "
-        f"{c['missing']} missing, {c['clean']} clean, "
-        f"{c['precision_failure']} precision-failure"
+        f"{c['missing']} missing, {c['accepted_miss']} accepted-miss, "
+        f"{c['clean']} clean, {c['precision_failure']} "
+        f"precision-failure, {c['scan_incomplete']} scan-incomplete"
     )
     if d["by_class"]:
         out.append("  deterministic by class:")
@@ -605,5 +714,6 @@ def render_text(report: dict, *, ruleset_version: str) -> str:
 
 def render_json(report: dict, *, ruleset_version: str) -> str:
     doc = dict(report)
-    doc["ruleset_version"] = ruleset_version
+    if ruleset_version:
+        doc["ruleset_version"] = ruleset_version
     return json.dumps(doc, indent=2, sort_keys=True) + "\n"

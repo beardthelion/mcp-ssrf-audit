@@ -52,13 +52,17 @@ metadata; CI additionally runs the rule tests against latest). It never
 executes or installs target-repo code and makes no network calls.
 `node_modules`, `dist`, `build`, `vendor`/`vendors`,
 `third_party`/`third-party`, `venv`, and `.venv` trees are excluded by
-default. A scanned repo cannot hide its own files:
-git-ignore handling and target `.semgrepignore` files are disabled, and any
-ignore files found are listed in the coverage summary. Findings under test or
+default, and any such directory found in the target is listed in the
+coverage summary so hidden code is visible rather than silent. A scanned
+repo cannot hide its own files:
+git-ignore handling, target `.semgrepignore` files, and inline
+`# nosemgrep` suppression comments are all disabled, and any ignore files
+found are listed in the coverage summary. Findings under test or
 example paths are flagged, not dropped.
 
 Exit codes: `0` = clean or checklist-only, `1` = at least one deterministic
-finding or unrecognized-guard item, `2` = operational failure.
+finding or unrecognized-guard item, `2` = operational failure, including
+the `analysis_incomplete` verdict (semgrep could not analyze any file).
 
 ## What a scan reports
 
@@ -69,10 +73,13 @@ precedence order:
    when the sink is reachable from handler input and nothing validates on
    the path;
 2. `recognized_complete`: a call in the known-complete shape set appears in
-   the site (rendered scoped to the shipped taxonomy and ruleset version,
-   never as an unqualified "safe");
-3. `unrecognized_guard`: validation-shaped calls intervene but no rule
-   recognizes the shape; reported for manual review, never silent;
+   the site *and* shares an identifier with the sink's URL argument (an
+   unrelated `pinned_request("https://...")` elsewhere in the handler does
+   not launder an unguarded sink). Rendered scoped to the shipped taxonomy
+   and ruleset version, never as an unqualified "safe";
+3. `unrecognized_guard`: a validation-shaped call bound to the sink's
+   argument intervenes but no rule recognizes the shape; reported for
+   manual review, never silent;
 4. `no_handler_input_flow` / `handler_no_sink`: recorded in coverage only.
 
 Text output prints deterministic findings grouped by class (each naming the
@@ -80,9 +87,11 @@ guard and sink locations), then unrecognized-guard items, then
 recognized-complete sites, then the manual-audit checklist for G7/G9/G10,
 then a coverage summary: files scanned per language, recognized handler
 candidates, sinks found (split into inside/outside recognized handlers),
-parse failures, and per-state site counts. A repo with no detected handlers
+parse failures, tool-excluded directories, target-controlled ignore files,
+and per-state site counts. A repo with no detected handlers
 or sinks reports "no MCP surface detected", a verdict distinct from "sinks
-checked, guards complete."
+checked, guards complete"; a run where semgrep could not analyze any file
+reports `analysis_incomplete` and exits 2 rather than claiming clean.
 
 `--json` emits the canonical machine output: `schema_version`
 (`mcp-ssrf-audit/v1`), `taxonomy_version` (`g0-g10/v1`), `ruleset_version`,
@@ -141,14 +150,26 @@ detection boundary; every rule cites it.
 - Corpus validation: `mcp-ssrf-audit corpus-validate [--corpus corpus]
   [--json] [--timeout SECONDS]` runs the packaged rules over every labeled
   sample in `manifest.jsonl` and reports per-sample status: `caught`,
-  `missed`, `misclassified-extra` (reported, non-gating), `clean`, or
-  `precision-failure` (a deterministic finding on a CLEAN instance) for the
-  deterministic tier, and `checklist-emitted` / `checklist-missing` for the
-  checklist tier. Unmaterialized fetched samples are skipped with a pointer
+  `missed`, `accepted-miss` (see below), `misclassified-extra` (reported,
+  non-gating), `clean`, `precision-failure` (a deterministic finding on a
+  CLEAN instance), or `scan-incomplete` (a sample file semgrep could not
+  analyze; gating, since it must not read as clean) for the
+  deterministic tier, and `checklist-emitted` / `checklist-missing` /
+  `accepted-miss` / `scan-incomplete` for the checklist tier.
+
+  `accepted_misses` is a manifest field: a mapping of expected class to a
+  reason string for classes a sample legitimately cannot surface under the
+  documented ceilings (no recognized handler source in the file, or the
+  sink lives in an undecorated helper past the intra-function boundary).
+  Accepted misses stay visible in the report with their reasons and do not
+  gate; a miss with no `accepted_misses` entry does.
+
+  Unmaterialized fetched samples are skipped with a pointer
   to `python3 scripts/fetch_corpus.py` (`--check` verifies pins without
-  downloading); a vendored sample missing files is an integrity error.
-  Exit codes: 0 fully green, 1 any miss, precision failure, or missing
-  checklist emission, 2 operational failure.
+  downloading); a vendored sample missing files is an integrity error, and
+  a run that evaluated zero samples fails rather than reporting green.
+  Exit codes: 0 fully green, 1 any miss, precision failure, scan-incomplete
+  file, or missing checklist emission, 2 operational failure.
 
 ## Limitations
 

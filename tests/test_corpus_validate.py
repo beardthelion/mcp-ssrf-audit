@@ -355,7 +355,7 @@ def test_unmaterialized_fetched_skipped(tmp_path):
             "instance_id": "live-x",
             "tier": "deterministic",
             "reason": "not materialized",
-            "missing": ["corpus/_fetched/live-x/srv.py"],
+            "missing_paths": ["corpus/_fetched/live-x/srv.py"],
         }
     ]
     assert rep["summary"]["skipped"] == 1
