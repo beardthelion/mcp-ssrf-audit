@@ -1,0 +1,153 @@
+rules:
+  - id: mcp-ssrf-audit-g1-python
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches a scheme check (urlparse/urlsplit
+      .scheme membership or equality) that is the only validation on the
+      tainted path in this function: no DNS resolution, no ipaddress parse,
+      and no hostname/netloc check call intervenes (G1: scheme-only guard).
+      http://169.254.169.254/ passes a scheme check. classify.py suppresses
+      the sibling G0 finding at the same site.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G1
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, python]
+      advisory_refs:
+        - "CVE-2026-26118 / GHSA-hhfx-wfvq-7g9c (jae-jae/fetcher-mcp validateUrlProtocol checks only that the scheme is http/https; same shape as the Azure MCP Server advisory)"
+      references:
+        - docs/source-sink-matrix.md
+    # Source: any parameter of a function registered as an MCP entry point
+    # (same contract as mcp-ssrf-audit-g0-python; see
+    # docs/source-sink-matrix.md).
+    pattern-sources:
+      - patterns:
+          - pattern: $ARG
+          # metavariable-regex is a full match on the bound text, so the
+          # receiver prefix must be spelled out.
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+    # Sink: a tainted parse result's .scheme attribute read inside a scheme
+    # comparison or membership check. urlparse(url) / urlsplit(url) keep the
+    # result tainted, so `parsed = urlparse(url)` and `urlparse(url).scheme`
+    # both reach the sink. The focused metavariable is the parse result, not
+    # the literal collection.
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $P.scheme in $C
+              - pattern: $P.scheme not in $C
+              - pattern: $P.scheme == $L
+              - pattern: $P.scheme != $L
+              - pattern: $P.scheme.startswith(...)
+          - focus-metavariable: $P
+          # Exclusions: a function that also resolves the host via DNS or
+          # parses it as an IP is more than scheme-only. Each not-inside
+          # entry lists one call; the deep-expression form covers calls
+          # nested in conditions, comprehensions, and assignments.
+          # metavariable-regex cannot constrain pattern-not-inside
+          # bindings, so resolver names are enumerated literally.
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.getaddrinfo(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyname(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyname_ex(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyaddr(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... getaddrinfo(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... gethostbyname(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... ipaddress.$M(...) ...>
+                ...
+          # A hostname/netloc value fed to a check call or compared against
+          # a literal means the guard is more than scheme-only (G2 or a
+          # helper guard). Bare presence checks (`if not parsed.hostname`)
+          # do not match these shapes and stay in scope for G1.
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $G($P.hostname, ...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $G($P.netloc, ...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $P.hostname == $L ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $P.hostname != $L ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $P.hostname in $C ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $P.hostname not in $C ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $P.hostname.startswith(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... $P.hostname.endswith(...) ...>
+                ...

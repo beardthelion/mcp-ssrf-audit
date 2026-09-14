@@ -1,0 +1,172 @@
+rules:
+  - id: mcp-ssrf-audit-g6-python
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches a redirect-following request inside a
+      function that calls a validation-named helper, so the entry URL is
+      checked but each 30x target is fetched without re-validation (G6:
+      missing redirect re-validation). requests, requests.Session, aiohttp
+      sessions, urllib urlopen, and browser.goto follow redirects by
+      default; httpx only when follow_redirects=True. Sites with no
+      guard-shaped call at all are left for the G0 rule.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G6
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, python]
+      advisory_refs:
+        - "CVE-2026-55525 / CVE-2026-55523 / CVE-2026-55524 / GHSA-5r34-2g38-6569 / GHSA-8hjw-25cg-g52h / GHSA-vg6p-v9vm-6fgj (MervinPraison/PraisonAI web_crawl validates the entry URL then fetches with follow_redirects=True and an unvalidated urlopen fallback)"
+        - "CVE-2026-57115 / GHSA-6h9p-93hq-q7h6 (PraisonAI SpiderTools session.get follows redirects past _validate_url; still open against the patched state)"
+      references:
+        - docs/source-sink-matrix.md
+    # Source: any parameter of a function registered as an MCP entry point
+    # (same contract as mcp-ssrf-audit-g0-python; see
+    # docs/source-sink-matrix.md).
+    pattern-sources:
+      - patterns:
+          - pattern: $ARG
+          # metavariable-regex is a full match on the bound text, so the
+          # receiver prefix must be spelled out.
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+    # Sinks. Every entry is gated on the enclosing function containing at
+    # least one call whose name reads as validation
+    # (valid|check|ssrf|allow|deny|block|private|public|safe|guard|secur|
+    # verify|resolve|host|addr|sanitiz|filter|inspect|is_ip). The gate is
+    # what separates G6 from G0: G6 is defined as validation that stops at
+    # the entry URL, so a function with no guard-shaped call at all stays
+    # quiet here and reports as G0. Known heuristic: the gate call need not
+    # take the tainted value, so an unrelated check_quota()-style call can
+    # satisfy it; that trades a possible G6-over-G0 mislabel for keeping the
+    # class deterministic intra-function.
+    pattern-sinks:
+      # A. Sinks that follow redirects by default.
+      - patterns:
+          - pattern-either:
+              - pattern: requests.$M($X, ...)
+              - pattern: aiohttp.$M($X, ...)
+              - pattern: urllib.request.$M($X, ...)
+              - patterns:
+                  - pattern: $F($X, ...)
+                  - metavariable-regex:
+                      metavariable: $F
+                      regex: '(urlopen|urlretrieve)'
+              - patterns:
+                  - pattern: $R.$M($X, ...)
+                  - metavariable-regex:
+                      metavariable: $R
+                      regex: '(?i).*(client|session)[a-z_0-9]*'
+                  - metavariable-regex:
+                      metavariable: $M
+                      regex: '^(get|post|put|delete|head|patch|options|request|stream|fetch|ws_connect)$'
+              - patterns:
+                  - pattern: $P.goto($X, ...)
+                  - metavariable-regex:
+                      metavariable: $P
+                      regex: '(?i).*(page|browser)[a-z_0-9]*'
+              - patterns:
+                  - pattern: $C.request.$M($X, ...)
+                  - metavariable-regex:
+                      metavariable: $M
+                      regex: '^(get|post|put|delete|head|patch|options|request|stream)$'
+          - focus-metavariable: $X
+          # Explicit per-call opt-out of redirects is not G6.
+          - pattern-not: requests.$M($X, ..., allow_redirects=False, ...)
+          - pattern-not: aiohttp.$M($X, ..., allow_redirects=False, ...)
+          - pattern-not: $R.$M($X, ..., allow_redirects=False, ...)
+          - pattern-not: $R.$M($X, ..., follow_redirects=False, ...)
+          # A request inside a client block constructed with
+          # follow_redirects=False is the manual per-hop wrapper shape
+          # (re-validate each hop before connect), not G6.
+          - pattern-not-inside: |
+              with $K(..., follow_redirects=False, ...) as $W:
+                ...
+          # Gate: enclosing function must contain a guard-shaped call.
+          # metavariable-regex does compose with pattern-inside bindings
+          # (unlike pattern-not-inside), so the name constraint lives here.
+          - pattern-inside: |
+              def $F(...):
+                ...
+                <... $G(...) ...>
+                ...
+          - metavariable-regex:
+              metavariable: $G
+              regex: '(?i).*(valid|check|ssrf|allow|deny|block|private|public|safe|guard|secur|verify|resolve|host|addr|sanitiz|filter|inspect|is_?ip).*'
+      # B. Explicit per-call redirect opt-in on any request-shaped call.
+      - patterns:
+          - pattern-either:
+              - pattern: $R.$M($X, ..., follow_redirects=True, ...)
+              - pattern: $R.$M($X, ..., allow_redirects=True, ...)
+          - focus-metavariable: $X
+          - pattern-inside: |
+              def $F(...):
+                ...
+                <... $G(...) ...>
+                ...
+          - metavariable-regex:
+              metavariable: $G
+              regex: '(?i).*(valid|check|ssrf|allow|deny|block|private|public|safe|guard|secur|verify|resolve|host|addr|sanitiz|filter|inspect|is_?ip).*'
+      # C. A receiver bound from a constructor called with
+      # follow_redirects=True (assignment form and with-as form). $C unifies
+      # across the sink pattern and the pattern-inside binding.
+      - patterns:
+          - pattern: $C.$M($X, ...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(get|post|put|delete|head|patch|options|request|stream|fetch|ws_connect)$'
+          - pattern-either:
+              - pattern-inside: |
+                  def $F(...):
+                    ...
+                    $C = $K(..., follow_redirects=True, ...)
+                    ...
+              - pattern-inside: |
+                  with $K(..., follow_redirects=True, ...) as $C:
+                    ...
+          - focus-metavariable: $X
+          - pattern-inside: |
+              def $F(...):
+                ...
+                <... $G(...) ...>
+                ...
+          - metavariable-regex:
+              metavariable: $G
+              regex: '(?i).*(valid|check|ssrf|allow|deny|block|private|public|safe|guard|secur|verify|resolve|host|addr|sanitiz|filter|inspect|is_?ip).*'
+    # Sanitizer: the recognized complete-guard call vocabulary, identical to
+    # mcp-ssrf-audit-g0-python. A value returned by (or check-and-thrown
+    # through) a resolve-all + range-check + pinned-connect wrapper does not
+    # produce G6 here; the raw-parameter stickiness ceiling applies the same
+    # way (see docs/source-sink-matrix.md).
+    pattern-sanitizers:
+      - by-side-effect: true
+        patterns:
+          - pattern: $GUARD($X, ...)
+          - metavariable-regex:
+              metavariable: $GUARD
+              regex: '(?i)((.*[._])?(ssrf|safe_?fetch|safe_?get|safe_?request|assert_?safe|ensure_?public|require_?public)|.*(public_?url|resolve_?and_?pin|pinned_?request))[a-z_0-9]*'
+          - focus-metavariable: $X

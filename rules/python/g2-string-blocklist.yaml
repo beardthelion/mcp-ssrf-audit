@@ -1,0 +1,132 @@
+rules:
+  - id: mcp-ssrf-audit-g2-python
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches a string blocklist check: the tainted
+      host is compared against internal-name literals (localhost, 127.0.0.1,
+      metadata hosts, .internal/.local suffixes) or a blocklist-named
+      collection, with no DNS resolution or ipaddress parse in the same
+      function (G2: string blocklist). Non-canonical IP forms (127.1,
+      decimal/hex/octal, ::ffff:7f00:1) and lookalike DNS names
+      (127.0.0.1.nip.io) pass a literal blocklist.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G2
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, python]
+      advisory_refs:
+        - "shape reference: ***REMOVED***/***REMOVED*** isPrivateIp blocklists 'localhost' and '127.0.0.1' as literal strings (no CVE; live target, corpus ***REMOVED***)"
+        - "shape reference: ***REMOVED***/***REMOVED*** literal private-range blocklist (no CVE; live target, corpus ***REMOVED***)"
+      references:
+        - docs/source-sink-matrix.md
+    # Source: any parameter of a function registered as an MCP entry point
+    # (same contract as mcp-ssrf-audit-g0-python; see
+    # docs/source-sink-matrix.md).
+    pattern-sources:
+      - patterns:
+          - pattern: $ARG
+          # metavariable-regex is a full match on the bound text, so the
+          # receiver prefix must be spelled out.
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+    # Sink: a tainted value compared against an internal-host literal or a
+    # blocklist-named collection. $Y is the check operand across every
+    # comparison shape, so a single metavariable-regex covers literal tuples
+    # (bound text includes quotes and parens), single literals, and named
+    # constants (BLOCKED_HOSTS). metavariable-regex is a full match; the .*
+    # wrapper makes it a contains-test.
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $X in $Y
+              - pattern: $X not in $Y
+              - pattern: $X == $Y
+              - pattern: $X != $Y
+              - pattern: $X.endswith($Y)
+              - pattern: $X.startswith($Y)
+          - focus-metavariable: $X
+          - metavariable-regex:
+              metavariable: $Y
+              regex: '(?i).*(localhost|127\.0\.0\.1|0\.0\.0\.0|::1|169\.254\.|192\.168\.|10\.|metadata\.|\.internal|\.local(domain)?|\.lan|\.home|\.corp|\.intra|block|deny|private|internal|forbid|disallow|restricted|banned|prohibit).*'
+          # Exclusions: a function that also resolves the host via DNS or
+          # parses it as an IP is not a pure string blocklist (the
+          # resolve-then-check shape is a complete guard or G3). One
+          # not-inside entry per call name; metavariable-regex cannot
+          # constrain not-inside bindings, so names are enumerated and the
+          # deep-expression form covers calls nested in conditions,
+          # comprehensions, and assignments.
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.getaddrinfo(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyname(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyname_ex(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyaddr(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... getaddrinfo(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... gethostbyname(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... gethostbyname_ex(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... gethostbyaddr(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... dns.resolver.$M(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... ipaddress.$M(...) ...>
+                ...

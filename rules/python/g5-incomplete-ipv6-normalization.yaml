@@ -1,0 +1,68 @@
+rules:
+  - id: mcp-ssrf-audit-g5-python
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches a textual IPv6-mapped-prefix check or
+      rewrite ("::ffff:" startswith / substring / removeprefix / replace)
+      instead of parsing the address (G5: incomplete IPv6 normalization).
+      The URL parser normalizes ::ffff:a.b.c.d to hextets (::ffff:7f00:1),
+      and the textual probe misses 6to4, Teredo, and case or bracket
+      variants, so a mapped loopback or private address passes.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G5
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, python]
+      advisory_refs:
+        - "CVE-2026-49857 / GHSA-pvrj-8cg3-j5f8 (ymw0407/auth-fetch-mcp isPrivateV6 handles only the dotted-quad ::ffff:a.b.c.d form; the normalized hextet form passes)"
+      references:
+        - docs/source-sink-matrix.md
+    # Source: any parameter of a function registered as an MCP entry point
+    # (same contract as mcp-ssrf-audit-g0-python; see
+    # docs/source-sink-matrix.md).
+    pattern-sources:
+      - patterns:
+          - pattern: $ARG
+          # metavariable-regex is a full match on the bound text, so the
+          # receiver prefix must be spelled out.
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+    # Sink: a tainted host value fed to a textual ::ffff: probe or rewrite.
+    # The literal bound by $L includes its quotes; the optional [ covers the
+    # bracketed-IPv6 form and [a-z]* covers r/u/f/b string prefixes.
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $X.startswith($L)
+              - pattern: $X.removeprefix($L)
+              - pattern: $X.replace($L, ...)
+              - pattern: $L in $X
+          - focus-metavariable: $X
+          - metavariable-regex:
+              metavariable: $L
+              regex: '(?i)[a-z]*["'']\[?::ffff:[0-9a-f.:]*["'']'

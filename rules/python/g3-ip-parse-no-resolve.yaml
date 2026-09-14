@@ -1,0 +1,125 @@
+rules:
+  - id: mcp-ssrf-audit-g3-python
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches a literal IP parse
+      (ipaddress.ip_address / IPv4Address / IPv6Address / inet_aton /
+      inet_pton) with no DNS resolution of the hostname in the same function
+      (G3: literal IP check without resolution). A hostname that is not an
+      IP literal is parsed as "not an IP" and allowed, so
+      127.0.0.1.nip.io or any controlled A record bypasses the range check.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G3
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, python]
+      advisory_refs:
+        - "CVE-2026-55526 / GHSA-x44h-65qv-cw74 (MervinPraison/PraisonAI SpiderTools _host_is_blocked returns False when ipaddress.ip_address and inet_aton both fail, so every resolvable hostname passes)"
+      references:
+        - docs/source-sink-matrix.md
+    # Source: any parameter of a function registered as an MCP entry point
+    # (same contract as mcp-ssrf-audit-g0-python; see
+    # docs/source-sink-matrix.md).
+    pattern-sources:
+      - patterns:
+          - pattern: $ARG
+          # metavariable-regex is a full match on the bound text, so the
+          # receiver prefix must be spelled out.
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+    # Sink: a tainted value parsed as an IP literal. inet_aton and inet_pton
+    # parse numeric forms only; they never consult DNS, so they belong to
+    # the G3 shape, not to the resolver exclusion list.
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: ipaddress.$M($X, ...)
+              - pattern: ip_address($X, ...)
+              - pattern: ip_network($X, ...)
+              - pattern: ip_interface($X, ...)
+              - pattern: IPv4Address($X, ...)
+              - pattern: IPv6Address($X, ...)
+              - pattern: IPv4Network($X, ...)
+              - pattern: IPv6Network($X, ...)
+              - pattern: socket.inet_aton($X, ...)
+              - pattern: socket.inet_pton($X, ...)
+              - pattern: inet_aton($X, ...)
+              - pattern: inet_pton($X, ...)
+          - focus-metavariable: $X
+          # Exclusion: a function that also resolves the host through DNS
+          # (getaddrinfo/gethostbyname family, dnspython) is the
+          # resolve-then-check shape, not G3. One not-inside entry per
+          # resolver name; metavariable-regex cannot constrain not-inside
+          # bindings, so names are enumerated and the deep-expression form
+          # covers calls nested in conditions, comprehensions, and
+          # assignments.
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.getaddrinfo(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyname(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyname_ex(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... socket.gethostbyaddr(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... getaddrinfo(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... gethostbyname(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... gethostbyname_ex(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... gethostbyaddr(...) ...>
+                ...
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                <... dns.resolver.$M(...) ...>
+                ...

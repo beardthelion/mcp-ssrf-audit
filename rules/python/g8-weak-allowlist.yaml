@@ -1,0 +1,185 @@
+rules:
+  - id: mcp-ssrf-audit-g8-python
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches an unanchored allowlist check: a
+      prefix (startswith), suffix (endswith), substring (in), or regex
+      (re.match without an end anchor, re.search) test on the tainted
+      URL/host (G8: weak allowlist). "https://api.example.com" prefix-
+      matches "https://api.example.com.evil.example", endswith("example.com")
+      matches "notexample.com", and an unanchored regex matches anywhere in
+      the string.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G8
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, python]
+      advisory_refs:
+        - "shape reference: ***REMOVED***/***REMOVED*** _is_url_match uses url.startswith(pattern) for '://'-patterns and bare host equality (no CVE; live target, corpus ***REMOVED***)"
+      references:
+        - docs/source-sink-matrix.md
+    # Source: any parameter of a function registered as an MCP entry point
+    # (same contract as mcp-ssrf-audit-g0-python; see
+    # docs/source-sink-matrix.md).
+    pattern-sources:
+      - patterns:
+          - pattern: $ARG
+          # metavariable-regex is a full match on the bound text, so the
+          # receiver prefix must be spelled out.
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+    # Sinks: unanchored textual checks on the tainted URL/host.
+    pattern-sinks:
+      # Prefix or suffix test: matches "example.com.evil" style bypasses.
+      - patterns:
+          - pattern-either:
+              - pattern: $X.startswith($L)
+              - pattern: $X.endswith($L)
+          - focus-metavariable: $X
+      # Substring containment of a literal inside the tainted value:
+      # "example.com" in url matches "https://evil.example/?q=example.com".
+      - patterns:
+          - pattern: $L in $X
+          - focus-metavariable: $X
+          - metavariable-regex:
+              metavariable: $L
+              regex: '[a-zA-Z]*["''].*["'']'
+      # re.match anchors at the start implicitly; the weak shape is a
+      # pattern literal without an end anchor ($ or \Z before the closing
+      # quote). metavariable-regex is a full match on the bound literal
+      # text including its quotes; [^$zZ] excludes both anchor spellings
+      # (semgrep 1.177 has no metavariable-not-regex).
+      - patterns:
+          - pattern: re.match($P, $X, ...)
+          - focus-metavariable: $X
+          - metavariable-regex:
+              metavariable: $P
+              regex: '[a-zA-Z]*["''].*[^$zZ]["'']'
+      # re.search is unanchored at both ends; using it as a host check is
+      # never anchored.
+      - patterns:
+          - pattern-either:
+              - pattern: re.search($P, $X, ...)
+              - pattern: re.findall($P, $X, ...)
+          - focus-metavariable: $X
+  - id: mcp-ssrf-audit-g8-python-env-killswitch
+    message: >-
+      An environment variable whose name reads as a guard bypass
+      (ALLOW_LOCAL_*, ALLOW_PRIVATE*, DISABLE_SSRF*, BYPASS*, SKIP_*,
+      UNSAFE/INSECURE/DANGEROUS) is read here (G8: env kill-switch). When it
+      gates an SSRF check the guard is an operator-set flag, not a control;
+      verify the flag cannot disable validation on model-supplied input.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G8
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: LOW
+      impact: MEDIUM
+      technology: [mcp, python]
+      advisory_refs:
+        - "CVE-2026-55525 / GHSA-5r34-2g38-6569 (MervinPraison/PraisonAI ALLOW_LOCAL_CRAWL env var skips SSRF validation in web_crawl)"
+        - "CVE-2026-49857 / GHSA-pvrj-8cg3-j5f8 (ymw0407/auth-fetch-mcp AUTH_FETCH_ALLOW_PRIVATE env kill-switch, present in both vulnerable and patched states)"
+      references:
+        - docs/source-sink-matrix.md
+    # Search mode: the env read is the finding; no taint involved. The
+    # variable name must be a string literal matching bypass vocabulary, so
+    # config-indirect reads like os.getenv(cookies["value"]) do not fire.
+    patterns:
+      - pattern-either:
+          - pattern: os.environ.get($V, ...)
+          - pattern: os.getenv($V, ...)
+          - pattern: os.environ[$V]
+      - metavariable-regex:
+          metavariable: $V
+          regex: '(?i)[a-z]*["''][A-Z0-9_]*(SSRF|ALLOW_?(LOCAL|PRIVATE|INTERNAL|ALL|ANY)|LOCAL_?CRAWL|DISABLE_?(SSRF|SECUR|GUARD|CHECK|VALID|FETCH)|BYPASS|SKIP_?(SSRF|GUARD|CHECK|VALID)|UNSAFE|INSECURE|DANGEROUS|NO_?(SSRF|GUARD|CHECK|VALID))[A-Z0-9_]*["'']'
+  - id: mcp-ssrf-audit-g8-python-default-off
+    message: >-
+      An allowlist/blocklist-shaped name (allow*, permit*, block*, deny*,
+      prohibit*, whitelist) is declared with an empty or off default
+      (None, [], False, Field(default=...)) (G8: guard off by default).
+      ***REMOVED*** ships allowed_domains defaulting to None, which makes the
+      guard a no-op until an operator opts in.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G8
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: LOW
+      impact: MEDIUM
+      technology: [mcp, python]
+      advisory_refs:
+        - "shape reference: ***REMOVED***/***REMOVED*** allowed_domains and block_ip_addresses default to None/False so _is_url_allowed returns True for everything (no CVE; live target, corpus ***REMOVED***)"
+        - "shape reference: ***REMOVED***/***REMOVED*** requests tool requires allow_dangerous_requests opt-in rather than guarding by default (no CVE; live target)"
+      references:
+        - docs/source-sink-matrix.md
+    # Search mode: the declaration is the finding. metavariable-regex is a
+    # full match on the bound name; (.*[._])? covers self.allowed_domains
+    # and config.allowed_hosts attribute targets.
+    pattern-either:
+      - patterns:
+          - pattern-either:
+              - pattern: $A = None
+              - pattern: $A = []
+              - pattern: |
+                  $A: $T = None
+              - pattern: |
+                  $A: $T = []
+          - metavariable-regex:
+              metavariable: $A
+              regex: '(?i)(.*[._])?[a-z_0-9]*(allow|white_?list|permit|block|deny|prohibit)[a-z_0-9]*'
+      - patterns:
+          - pattern-either:
+              - pattern: $A = Field(..., default=$D, ...)
+              - pattern: |
+                  $A: $T = Field(..., default=$D, ...)
+          - metavariable-regex:
+              metavariable: $A
+              regex: '(?i)(.*[._])?[a-z_0-9]*(allow|white_?list|permit|block|deny|prohibit)[a-z_0-9]*'
+          - metavariable-regex:
+              metavariable: $D
+              regex: '(None|False|\[\]|\{\}|set\(\)|dict\(\)|list\(\))'
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  def $F(..., $A=None, ...):
+                    ...
+              - pattern: |
+                  def $F(..., $A=[], ...):
+                    ...
+          - metavariable-regex:
+              metavariable: $A
+              regex: '(?i)[a-z_0-9]*(allow|white_?list|permit|block|deny|prohibit)[a-z_0-9]*'
