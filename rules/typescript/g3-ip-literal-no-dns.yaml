@@ -1,0 +1,212 @@
+rules:
+  - id: mcp-ssrf-audit-g3-typescript
+    message: >-
+      SSRF guard parses the host as an IP literal but never resolves DNS
+      (G3: isIP/is-ip-literal check without DNS resolution). When the name
+      is not a literal the guard treats it as safe and fetches it directly,
+      so attacker-controlled DNS resolves to internal addresses after the
+      check. A complete guard resolves the name and validates every
+      returned address. See docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G3
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, typescript, javascript]
+      advisory_refs:
+        - "CVE-2026-55526 / GHSA-x44h-65qv-cw74 (PraisonAI spider tools validate a hostname literal but fetch without resolving; Python corpus anchor, same guard shape)"
+      references:
+        - docs/source-sink-matrix.md
+    # The finding lands on the isIP-family call. It fires only when the
+    # enclosing block also performs an outbound request and never resolves
+    # DNS: the literal check is then the whole host guard. A resolver call
+    # (lookup/resolve*/getaddrinfo) in an enclosing block suppresses, since
+    # the isIP call then classifies resolved output.
+    #
+    # Semgrep CE notes: see the header of g1-scheme-only.yaml for the
+    # `{ ... <... E ...> ... }` block-region semantics used here.
+    patterns:
+      - pattern-either:
+          - pattern: isIP(...)
+          - pattern: isIPv4(...)
+          - pattern: isIPv6(...)
+          - pattern: $O.isIP(...)
+          - pattern: $O.isIPv4(...)
+          - pattern: $O.isIPv6(...)
+      # An outbound request happens in an enclosing block.
+      - pattern-either:
+          - pattern-inside: |
+              {
+                ...
+                <... fetch(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... nodeFetch(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... got(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... axios(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... axios.$M(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... got.$M(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... $X.goto(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... $X.request.$M(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... request(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... https.get(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... https.request(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... http.get(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... http.request(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... undici(...) ...>
+                ...
+              }
+      # No DNS resolution in an enclosing block.
+      - pattern-not-inside: |
+          {
+            ...
+            <... lookup(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.lookup(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolve4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolve6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolveAny(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolve4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolve6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolveAny(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolveAllIps(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolveAll(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... getaddrinfo(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.getaddrinfo(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... lookupService(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.lookupService(...) ...>
+            ...
+          }

@@ -1,0 +1,137 @@
+rules:
+  - id: mcp-ssrf-audit-g6-typescript
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches a request that follows redirects
+      without re-validating each hop (G6: redirect re-validation missing).
+      fetch defaults to redirect:"follow", and axios/got follow redirects
+      unless maxRedirects is 0 or a redirect handler re-checks every
+      Location target. Entry-URL validation does not protect the second
+      hop. See docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G6
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, typescript, javascript]
+      advisory_refs:
+        - "CVE-2026-55525 / CVE-2026-55523 / CVE-2026-55524 / GHSA-5r34-2g38-6569 (PraisonAI web crawl follows redirects after entry-URL validation; Python corpus anchor, same guard shape)"
+      references:
+        - docs/source-sink-matrix.md
+    # Sources and sanitizers mirror g0-unguarded-fetch.yaml exactly; only
+    # the sinks differ. A sink is a tainted-URL request that can follow
+    # redirects: fetch/nodeFetch without redirect:"manual" or "error",
+    # axios/got without maxRedirects:0 or a per-hop redirect handler, and
+    # page/browser navigation. Explicit per-hop validation (a Location
+    # header read plus a redirect-target check in the same block, or a
+    # named redirect-policy callback in the options object) suppresses.
+    pattern-sources:
+      # metavariable-regex is a full match on the bound text.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource)'
+          - pattern-either:
+              - pattern-inside: |
+                  $SRV.$REG(..., async (..., $ARG, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., (..., $ARG, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., async (..., $ARG, ...) => ...)
+              - pattern-inside: |
+                  $SRV.$REG(..., (..., $ARG, ...) => ...)
+              - pattern-inside: |
+                  $SRV.$REG(..., async function $H(..., $ARG, ...) { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., function $H(..., $ARG, ...) { ... })
+      - patterns:
+          - pattern: $PROP
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource)'
+          - pattern-either:
+              - pattern-inside: |
+                  $SRV.$REG(..., async ({ ..., $PROP, ... }, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., ({ ..., $PROP, ... }, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., async ({ ..., $PROP, ... }: $T, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., ({ ..., $PROP, ... }: $T, ...) => { ... })
+    pattern-sinks:
+      - pattern-either:
+          # fetch(url) defaults to redirect:"follow". Suppress the manual
+          # and error policies and options objects carrying a per-hop
+          # redirect callback.
+          - patterns:
+              - pattern-either:
+                  - pattern: fetch($U, ...)
+                  - pattern: nodeFetch($U, ...)
+              - pattern-not: 'fetch($U, { ..., redirect: "manual", ... })'
+              - pattern-not: 'fetch($U, { ..., redirect: ''manual'', ... })'
+              - pattern-not: 'fetch($U, { ..., redirect: "error", ... })'
+              - pattern-not: 'fetch($U, { ..., redirect: ''error'', ... })'
+              - pattern-not: 'fetch($U, { ..., beforeRedirect: ..., ... })'
+              - pattern-not: 'fetch($U, { ..., onRedirect: ..., ... })'
+              - pattern-not: 'fetch($U, { ..., redirectHandler: ..., ... })'
+              - pattern-not: 'fetch($U, { ..., checkRedirect: ..., ... })'
+          # axios/got follow redirects by default. maxRedirects:0,
+          # followRedirect:false, or a redirect-policy callback suppresses.
+          - patterns:
+              - pattern-either:
+                  - pattern: axios($U, ...)
+                  - pattern: axios.$M($U, ...)
+                  - pattern: got($U, ...)
+                  - pattern: got.$M($U, ...)
+              - pattern-not: '$F($U, { ..., maxRedirects: 0, ... })'
+              - pattern-not: '$F($U, { ..., followRedirect: false, ... })'
+              - pattern-not: '$F($U, { ..., followRedirects: false, ... })'
+              - pattern-not: '$F($U, { ..., beforeRedirect: ..., ... })'
+              - pattern-not: '$F($U, { ..., onRedirect: ..., ... })'
+              - pattern-not: '$F($U, { ..., redirectHandler: ..., ... })'
+              - pattern-not: '$F($U, { ..., checkRedirect: ..., ... })'
+          # Options-object call forms: axios({ url, ... }) etc.
+          - patterns:
+              - pattern-either:
+                  - pattern: 'axios({ ..., url: $U, ... })'
+                  - pattern: 'axios.$M({ ..., url: $U, ... })'
+                  - pattern: 'got({ ..., url: $U, ... })'
+                  - pattern: 'got.$M({ ..., url: $U, ... })'
+              - pattern-not: '$F({ ..., url: $U, ..., maxRedirects: 0, ... })'
+              - pattern-not: '$F({ ..., url: $U, ..., followRedirect: false, ... })'
+              - pattern-not: '$F({ ..., url: $U, ..., followRedirects: false, ... })'
+              - pattern-not: '$F({ ..., url: $U, ..., beforeRedirect: ..., ... })'
+              - pattern-not: '$F({ ..., url: $U, ..., onRedirect: ..., ... })'
+              - pattern-not: '$F({ ..., url: $U, ..., redirectHandler: ..., ... })'
+          # Browser navigation: page/browser/ctx.goto(tainted). Browser
+          # redirects happen inside the navigation, so pre-request
+          # validation alone is the G6 shape.
+          - patterns:
+              - pattern: $P.goto($U, ...)
+              - metavariable-regex:
+                  metavariable: $P
+                  regex: '(?i).*(page|browser|ctx)[a-z_0-9]*'
+          # ctx.request.<method>(tainted) and request(tainted).
+          - patterns:
+              - pattern: $C.request.$M($U, ...)
+              - metavariable-regex:
+                  metavariable: $M
+                  regex: '^(get|post|put|delete|head|patch|options|request|stream)$'
+          - pattern: request($U, ...)
+    # Same recognized-complete vocabulary as G0. by-side-effect stays a
+    # single focused entry; see g0-unguarded-fetch.yaml for why.
+    pattern-sanitizers:
+      - by-side-effect: true
+        patterns:
+          - pattern: $GUARD($X, ...)
+          - metavariable-regex:
+              metavariable: $GUARD
+              regex: '(?i)((.*[._])?(ssrf|safe_?fetch|safe_?get|safe_?request|assert_?safe|ensure_?public|require_?public)|.*(public_?url|resolve_?and_?pin|pinned_?request))[a-z_0-9]*'
+          - focus-metavariable: $X

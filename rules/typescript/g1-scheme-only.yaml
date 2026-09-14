@@ -1,0 +1,228 @@
+rules:
+  - id: mcp-ssrf-audit-g1-typescript
+    message: >-
+      SSRF guard checks only the URL scheme (G1: scheme-only validation).
+      A protocol allowlist such as `["http:", "https:"].includes(u.protocol)`
+      or `url.startsWith("https://")` never inspects the host, so
+      127.0.0.1, [::1], metadata endpoints, and attacker DNS all pass.
+      See docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G1
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, typescript, javascript]
+      advisory_refs:
+        - "CVE-2026-26118 / GHSA-hhfx-wfvq-7g9c (scheme-only validation; jae-jae/fetcher-mcp validateUrlProtocol is the corpus shape, Azure MCP Server is the advisory anchor)"
+      references:
+        - docs/source-sink-matrix.md
+    # Fires on the scheme-check expression itself. Suppressed when an
+    # enclosing block also performs a host-level or address-level check:
+    # the scheme test is then a first-stage filter, not the whole guard,
+    # and the site classifies under the remaining guard stages.
+    #
+    # Semgrep CE notes: inside `{ ... E ... }` sequences, `<... E ...>` as
+    # an element deep-matches E in every expression position, including
+    # if/while conditions, ternaries, call args, and nested blocks. The
+    # sequence must be written as a multiline block (a single-line
+    # `{ ... E ... }` fails to parse). A matched region is every block
+    # containing E, so a marker in an inner if-block suppresses matches
+    # anywhere in the enclosing function body. Bare `... E ...` without
+    # braces matches the file-level statement list and suppresses
+    # file-wide, which is too coarse here.
+    patterns:
+      - pattern-either:
+          # ["http:", "https:"].includes(u.protocol) and Set/array variants.
+          - pattern: $L.includes($X.protocol)
+          - pattern: $L.has($X.protocol)
+          - pattern: $L.indexOf($X.protocol)
+          # u.protocol === "https:" / !== "http:" / == / != comparisons.
+          - pattern: $X.protocol === $V
+          - pattern: $X.protocol !== $V
+          - pattern: $X.protocol == $V
+          - pattern: $X.protocol != $V
+          # url.startsWith("https://") or ("https:") on a raw string or on a
+          # parsed protocol field. The literal must end at the scheme; a
+          # "https://host" prefix is an allowlist shape and belongs to G8.
+          - patterns:
+              - pattern: $U.startsWith($LIT)
+              - metavariable-regex:
+                  metavariable: $LIT
+                  regex: >-
+                    ["'`]https?(:/{0,2})?["'`]
+      # Schema-refinement callbacks (zod .refine/.superRefine and similar)
+      # are input-shape validation, not the fetch-path guard; a scheme-only
+      # check inside one does not make the site's guard scheme-only.
+      - pattern-not-inside: $SC.refine(...)
+      - pattern-not-inside: $SC.superRefine(...)
+      # Host-level checks in an enclosing block.
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NH.hostname ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NH.host ...>
+            ...
+          }
+      # IP-literal parsing, range checking, or DNS resolution in an
+      # enclosing block is a deeper guard stage.
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIP(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isIP(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIPv4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isIPv4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIPv6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isIPv6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... lookup(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.lookup(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolve(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolve(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolve4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolve6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolve4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolve6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolveAllIps(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolveAll(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... getaddrinfo(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.getaddrinfo(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... lookupService(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.lookupService(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... ipaddr.$M ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... is_ip_private(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.is_ip_private(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isPrivateIp(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isPrivateIp(...) ...>
+            ...
+          }

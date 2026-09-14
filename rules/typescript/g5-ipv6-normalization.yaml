@@ -1,0 +1,149 @@
+rules:
+  - id: mcp-ssrf-audit-g5-typescript
+    message: >-
+      SSRF guard normalizes only the dotted-quad form of IPv4-mapped IPv6
+      (G5: incomplete IPv6 normalization). The `::ffff:` prefix branch
+      slices the tail and passes it to an IPv4 check, which catches
+      `::ffff:127.0.0.1` but misses the WHATWG-normalized hexadecimal form
+      `::ffff:7f00:1`, NAT64 `64:ff9b::`, and 6to4 `2002:` translations.
+      See docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G5
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, typescript, javascript]
+      advisory_refs:
+        - "CVE-2026-49857 / GHSA-pvrj-8cg3-j5f8 (auth-fetch-mcp isPrivateV6 slices the ::ffff: tail and calls net.isIPv4 on it, missing hex-normalized mapped addresses)"
+      references:
+        - docs/source-sink-matrix.md
+    # The finding lands on the isIPv4/isIP call applied to the extracted
+    # tail. It requires both the `::ffff:` marker and a tail-extraction
+    # call (.slice/.substring/.substr) in an enclosing block, and is
+    # suppressed by the markers of complete normalization: hexadecimal
+    # reconstruction (parseInt base 16, split on ':'), NAT64/6to4 literals,
+    # or an ipaddr.js-style parser.
+    #
+    # Semgrep CE notes: see the header of g1-scheme-only.yaml for the
+    # `{ ... <... E ...> ... }` block-region semantics used here.
+    patterns:
+      - pattern-either:
+          - pattern: isIPv4(...)
+          - pattern: isIP(...)
+          - pattern: $O.isIPv4(...)
+          - pattern: $O.isIP(...)
+      # The block handles an IPv4-mapped tail (prefix marker) and slices
+      # a substring out of it (tail extraction).
+      - pattern-either:
+          - pattern-inside: |
+              {
+                ...
+                <... $X.startsWith("::ffff:") ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... $X.indexOf("::ffff:") ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... $X.includes("::ffff:") ...>
+                ...
+              }
+      - pattern-either:
+          - pattern-inside: |
+              {
+                ...
+                <... $X.slice(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... $X.substring(...) ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... $X.substr(...) ...>
+                ...
+              }
+      # Complete normalization reconstructs the address: hexadecimal group
+      # parsing, colon splitting, or an ipaddr.js-style parser.
+      - pattern-not-inside: |
+          {
+            ...
+            <... parseInt(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $O.parseInt(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.split(":") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.split(':') ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... ipaddr.$M ...>
+            ...
+          }
+      # NAT64 / 6to4 awareness.
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.startsWith("64:ff9b::") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.includes("64:ff9b") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.indexOf("64:ff9b") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.startsWith("2002:") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.includes("2002:") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.indexOf("2002:") ...>
+            ...
+          }

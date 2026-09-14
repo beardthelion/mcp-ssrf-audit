@@ -1,0 +1,271 @@
+rules:
+  - id: mcp-ssrf-audit-g2-typescript
+    message: >-
+      SSRF guard compares the hostname against string literals or a regex
+      blocklist (G2: string blocklist). Literal checks for "localhost",
+      "127.0.0.1", ".local" and dotted-quad regexes miss decimal/octal/hex
+      IPv4, 127.1, [::1], ::ffff:7f00:1, IPv6 loopback forms, and any host
+      whose DNS resolves to a private address. See docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G2
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, typescript, javascript]
+      advisory_refs:
+        - "***REMOVED***/***REMOVED*** isPrivateIp: exact localhost/127.0.0.1 compares plus a dotted-quad regex, unwired into the fetch path (no advisory; live target)"
+        - "***REMOVED***/***REMOVED*** validateUrl: BLOCKED_HOSTNAMES + dotted-quad PRIVATE_IPV4 + narrow LOOPBACK_IPV6 regexes (no advisory; live target)"
+      references:
+        - docs/source-sink-matrix.md
+    # Fires on the blocklist-check expression. Gated on a host context: an
+    # enclosing block must reference `.hostname`, `.host`, or `new URL(...)`,
+    # so literal compares on unrelated strings do not fire. Suppressed when
+    # the enclosing block also runs an IP-literal parse, a range check, or a
+    # DNS resolution: the string check is then a first-stage filter and the
+    # site classifies under the remaining guard stages. See the Semgrep CE
+    # notes in g1-scheme-only.yaml for the `{ ... E ... }` element-position
+    # and region rules used here.
+    patterns:
+      - pattern-either:
+          # hostname === "localhost" / !== "127.0.0.1" literal compares.
+          - patterns:
+              - pattern-either:
+                  - pattern: $H === $L
+                  - pattern: $H !== $L
+                  - pattern: $H == $L
+                  - pattern: $H != $L
+              - metavariable-regex:
+                  metavariable: $L
+                  regex: >-
+                    (?i).*(localhost|127\.0\.0\.1|0\.0\.0\.0|::1|::ffff|169\.254|192\.168|10\.0\.0|172\.(1[6-9]|2[0-9]|3[01])\.|\.local|\.localhost|\.internal|metadata\.|fe80|fc00|fd00|broadcasthost|loopback).*
+          # hostname.includes("localhost") / indexOf("127.") checks.
+          - patterns:
+              - pattern-either:
+                  - pattern: $H.includes($L)
+                  - pattern: $H.indexOf($L)
+              - metavariable-regex:
+                  metavariable: $L
+                  regex: >-
+                    (?i).*(localhost|127\.0\.0\.1|0\.0\.0\.0|::1|::ffff|169\.254|192\.168|10\.0\.|172\.(1[6-9]|2[0-9]|3[01])\.|\.local|\.localhost|\.internal|metadata\.|fe80|fc00|fd00|broadcasthost|loopback).*
+          # hostname.endsWith(".local") / startsWith("127.") literal checks.
+          - patterns:
+              - pattern-either:
+                  - pattern: $H.endsWith($L)
+                  - pattern: $H.startsWith($L)
+              - metavariable-regex:
+                  metavariable: $L
+                  regex: >-
+                    (?i).*(localhost|127\.0\.0\.1|0\.0\.0\.0|::1|::ffff|169\.254|192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01])|\.local|\.localhost|\.internal|metadata\.|fe80|fc00|fd00|broadcasthost|loopback).*
+          # BLOCKED_HOSTNAMES.test(hostname) / hostname.match(ipv4Regex),
+          # where the regex literal or identifier name is blocklist-shaped.
+          - patterns:
+              - pattern-either:
+                  - pattern: $R.test($H)
+                  - pattern: $H.match($R)
+                  - pattern: $H.search($R)
+              - metavariable-regex:
+                  metavariable: $R
+                  regex: >-
+                    (?i).*(localhost|127|0\.0\.0\.0|::1|ffff|\.local|\.internal|\.localhost|metadata|169\.254|192\.168|10\.|172\.|fe80|fc00|fd00|loopback|private|block|deny|forbid|disallow|blacklist|ipv4|ipv6|cidr|bad|\\d\{1,3\}).*
+          # BLOCKED.has(hostname) / ["localhost", ...].includes(hostname).
+          - patterns:
+              - pattern-either:
+                  - pattern: $ARR.includes($H)
+                  - pattern: $ARR.has($H)
+                  - pattern: $ARR.indexOf($H)
+              - metavariable-regex:
+                  metavariable: $ARR
+                  regex: >-
+                    (?i).*(localhost|127\.0\.0\.1|0\.0\.0\.0|::1|\.local|\.internal|\.localhost|metadata\.|169\.254|192\.168|172\.16|10\.0\.|block|deny|forbid|disallow|blacklist|private|loopback|bad).*
+      # Host context: an enclosing block touches .hostname/.host or
+      # parses a URL. `<... E ...>` elements deep-match every
+      # expression position, including if/while conditions; the
+      # sequence must be a multiline block (see the g1 header notes).
+      - pattern-either:
+          - pattern-inside: |
+              {
+                ...
+                <... $NH.hostname ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... $NH.host ...>
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                <... new URL(...) ...>
+                ...
+              }
+      # Deeper guard stages in an enclosing block suppress the G2 label.
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIP(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isIP(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIPv4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isIPv4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIPv6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isIPv6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... lookup(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.lookup(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolve(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolve(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolve4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolve6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolve4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.resolve6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolveAllIps(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... resolveAll(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... getaddrinfo(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.getaddrinfo(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... lookupService(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.lookupService(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... ipaddr.$M ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... is_ip_private(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.is_ip_private(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isPrivateIp(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isPrivateIp(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isPrivateOrLocalIp(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $NI.isPrivateOrLocalIp(...) ...>
+            ...
+          }

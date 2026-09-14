@@ -1,0 +1,301 @@
+rules:
+  - id: mcp-ssrf-audit-g8-typescript
+    message: >-
+      SSRF guard is default-off, bypassable, or allowlist-loose (G8:
+      allowlist/default-off weakness). Covers environment kill switches
+      such as MCP_FETCH_DISABLE_SSRF_GUARD, allow-everything flags and
+      helpers, allowlists that default to empty, fail-open emptiness
+      checks, and unanchored hostname suffix/prefix checks where
+      "trusted.com" also matches "eviltrusted.com" or
+      "trusted.com.evil.example". See docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G8
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, typescript, javascript]
+      advisory_refs:
+        - "CVE-2026-80347 (kazuph/mcp-fetch HEAD gates isSafeUrl behind MCP_FETCH_DISABLE_SSRF_GUARD)"
+        - "CVE-2026-49857 / GHSA-pvrj-8cg3-j5f8 (auth-fetch-mcp AUTH_FETCH_ALLOW_PRIVATE bypass; instance also labeled G5)"
+      references:
+        - docs/source-sink-matrix.md
+    # Six independent weak shapes; the finding lands on the shape itself.
+    # Semgrep CE notes: see the header of g1-scheme-only.yaml for the
+    # `{ ... <... E ...> ... }` block-region semantics used for the
+    # unanchored-allowlist context and suppressions.
+    patterns:
+      - pattern-either:
+          # (a) Environment read of a guard-config variable: kill switches,
+          # allow-private/allow-hosts overrides, bypass/insecure toggles.
+          - patterns:
+              - pattern-either:
+                  - pattern: process.env.$ENV
+                  - pattern: process.env[$ENV]
+              - metavariable-regex:
+                  metavariable: $ENV
+                  regex: >-
+                    (?i).*(SSRF|GUARD|SAFET|SECUR|ALLOW_?PRIVATE|ALLOW_?HOST|ALLOW_?ALL|ALLOWED_?HOST|ALLOWED_?DOMAIN|ALLOW_?INTERNAL|BYPASS|INSECURE|UNSAFE|SKIP_?CHECK|NO_?CHECK|TRUST_?ALL).*
+          # (b) A bypass flag used as a gate, e.g.
+          # `if (DISABLE_SSRF_GUARD) { return { ok: true, url: u } }`.
+          - patterns:
+              - pattern: if ($FLAG) { ... }
+              - metavariable-regex:
+                  metavariable: $FLAG
+                  regex: >-
+                    (?i).*(ssrf|guard|bypass|allow_?private|allow_?all|all_?private|insecure|unsafe|skip_?check|no_?check|disable_?[a-z_0-9]*(check|guard|ssrf|safe)|allow_?internal|trust_?all|permit_?all).*
+          # (c) An allow-everything helper call used as a gate, e.g.
+          # `if (allowAllPrivate()) { return parsed; }`.
+          - patterns:
+              - pattern: if ($F(...)) { ... }
+              - metavariable-regex:
+                  metavariable: $F
+                  regex: >-
+                    (?i).*(allow_?all|all_?private|allow_?private|bypass|skip_?check|no_?check|disable_?[a-z_0-9]*(check|guard|ssrf|safe)|unsafe|insecure|permit_?all|allow_?everything|trust_?all).*
+          # (d) Allowlist or host list defaulting to empty.
+          - patterns:
+              - pattern-either:
+                  - pattern: $X ?? []
+                  - pattern: $X || []
+                  - pattern: $X ?? {}
+                  - pattern: $X || {}
+                  - pattern: $X ?? ""
+                  - pattern: $X || ""
+                  - pattern: $X ?? ''
+                  - pattern: $X || ''
+              - metavariable-regex:
+                  metavariable: $X
+                  regex: >-
+                    (?i).*(allow|permit|white|host|domain|safe|trust|origin|acl|internal).*
+          # (e) Fail-open emptiness gate on an allowlist, e.g.
+          # `if (allowedHosts.length === 0) { return parsed; }`.
+          - patterns:
+              - pattern-either:
+                  - pattern: if ($L.length === 0) { ... }
+                  - pattern: if ($L.size === 0) { ... }
+                  - pattern: if ($L.length < 1) { ... }
+                  - pattern: if ($L.size < 1) { ... }
+                  - pattern: if (!$L.length) { ... }
+                  - pattern: if (!$L.size) { ... }
+              - metavariable-regex:
+                  metavariable: $L
+                  regex: >-
+                    (?i).*(allow|permit|white|host|domain|safe|trust|origin|acl|internal).*
+          # (f) Unanchored suffix/prefix check on a host-derived value with
+          # a non-literal operand (a literal suffix is the G2 shape).
+          # `h.endsWith("." + d)` contains a quoted literal so it never
+          # binds $V here; only bare variable/member operands match.
+          # `.includes` is intentionally absent: collection.includes is
+          # exact membership and cannot be told apart lexically.
+          - patterns:
+              - pattern-either:
+                  - pattern: $H.endsWith($V)
+                  - pattern: $H.startsWith($V)
+              - metavariable-regex:
+                  metavariable: $V
+                  regex: >-
+                    ^[^"'`]*$
+              # Host context: the enclosing block touches .hostname/.host,
+              # parses a URL, or the wrapping callable takes a host-named
+              # parameter.
+              - pattern-either:
+                  - pattern-inside: |
+                      {
+                        ...
+                        <... $NH.hostname ...>
+                        ...
+                      }
+                  - pattern-inside: |
+                      {
+                        ...
+                        <... $NH.host ...>
+                        ...
+                      }
+                  - pattern-inside: |
+                      {
+                        ...
+                        <... new URL(...) ...>
+                        ...
+                      }
+                  - patterns:
+                      - pattern-inside: |
+                          function $F(..., $P, ...) { ... }
+                      - metavariable-regex:
+                          metavariable: $P
+                          regex: (?i).*(host|hostname|ip|addr|raw|input|target|domain|url).*
+                  - patterns:
+                      - pattern-inside: |
+                          (..., $P, ...) => { ... }
+                      - metavariable-regex:
+                          metavariable: $P
+                          regex: (?i).*(host|hostname|ip|addr|raw|input|target|domain|url).*
+                  - patterns:
+                      - pattern-inside: |
+                          async (..., $P, ...) => { ... }
+                      - metavariable-regex:
+                          metavariable: $P
+                          regex: (?i).*(host|hostname|ip|addr|raw|input|target|domain|url).*
+                  - patterns:
+                      - pattern-inside: |
+                          (..., $P, ...) => $RES
+                      - metavariable-regex:
+                          metavariable: $P
+                          regex: (?i).*(host|hostname|ip|addr|raw|input|target|domain|url).*
+              # A block that also runs an IP-literal parse, range check,
+              # or DNS resolution treats the suffix check as a first-stage
+              # filter; the site classifies under the remaining stages.
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... isIP(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.isIP(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... isIPv4(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.isIPv4(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... isIPv6(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.isIPv6(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... lookup(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.lookup(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... resolve(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.resolve(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... resolve4(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... resolve6(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.resolve4(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.resolve6(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... resolveAllIps(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... resolveAll(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... getaddrinfo(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.getaddrinfo(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... ipaddr.$M ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... is_ip_private(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.is_ip_private(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... isPrivateIp(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.isPrivateIp(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... isPrivateOrLocalIp(...) ...>
+                    ...
+                  }
+              - pattern-not-inside: |
+                  {
+                    ...
+                    <... $NI.isPrivateOrLocalIp(...) ...>
+                    ...
+                  }

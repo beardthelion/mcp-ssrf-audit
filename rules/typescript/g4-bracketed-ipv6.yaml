@@ -1,0 +1,208 @@
+rules:
+  - id: mcp-ssrf-audit-g4-typescript
+    message: >-
+      SSRF guard passes a URL hostname to an IP-literal parser without
+      stripping brackets (G4: bracketed IPv6 literal). WHATWG `URL.hostname`
+      keeps the brackets on IPv6 literals, so `net.isIP("[::1]")` returns 0,
+      the private-range branch is skipped, and the name falls through to DNS
+      or is treated as an ordinary host. Strip `[`/`]` (or normalize) before
+      calling isIP/isIPv4/isIPv6. See docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G4
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, typescript, javascript]
+      advisory_refs:
+        - "CVE-2026-80347 (kazuph/mcp-fetch isSafeUrl passes URL.hostname straight to net.isIP)"
+        - "CVE-2026-42260 / GHSA-v228-72c7-fx8j (open-websearch isPrivateOrLocalIp calls isIP on the unstripped host)"
+      references:
+        - docs/source-sink-matrix.md
+    # The finding lands on the isIP-family call (the guard site). It fires
+    # only in a host-handling context (a block that references `.hostname`,
+    # or a function/arrow/method whose parameter is host-named) and only
+    # when no enclosing block shows bracket normalization.
+    #
+    # Semgrep CE notes: inside `{ ... E ... }` sequences, `<... E ...>` as
+    # an element deep-matches E in every expression position, including
+    # if/while conditions, ternaries, call args, and nested blocks. The
+    # sequence must be a multiline block (a single-line `{ ... E ... }`
+    # fails to parse). A matched region is every block containing E, so a
+    # marker in an inner if-block suppresses matches anywhere in the
+    # enclosing function body.
+    patterns:
+      - pattern-either:
+          - pattern: isIP(...)
+          - pattern: isIPv4(...)
+          - pattern: isIPv6(...)
+          - pattern: $O.isIP(...)
+          - pattern: $O.isIPv4(...)
+          - pattern: $O.isIPv6(...)
+      # Host-handling context.
+      - pattern-either:
+          - pattern-inside: |
+              {
+                ...
+                $H.hostname
+                ...
+              }
+          - pattern-inside: |
+              {
+                ...
+                $H.host
+                ...
+              }
+          - patterns:
+              - pattern-inside: |
+                  function $F(..., $P, ...) { ... }
+              - metavariable-regex:
+                  metavariable: $P
+                  regex: (?i).*(host|hostname|ip|addr|raw|input|target|domain|url).*
+          - patterns:
+              - pattern-inside: |
+                  (..., $P, ...) => { ... }
+              - metavariable-regex:
+                  metavariable: $P
+                  regex: (?i).*(host|hostname|ip|addr|raw|input|target|domain|url).*
+          - patterns:
+              - pattern-inside: |
+                  async (..., $P, ...) => { ... }
+              - metavariable-regex:
+                  metavariable: $P
+                  regex: (?i).*(host|hostname|ip|addr|raw|input|target|domain|url).*
+          - patterns:
+              - pattern-inside: |
+                  (..., $P, ...) => $RES
+              - metavariable-regex:
+                  metavariable: $P
+                  regex: (?i).*(host|hostname|ip|addr|raw|input|target|domain|url).*
+      # Bracket stripping or rewriting before the literal check.
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.replace(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.slice(1, ...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.substring(1, ...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.substr(1, ...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.startsWith("[") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.endsWith("]") ...>
+            ...
+          }
+      # IPv4-mapped-IPv6 handling implies a normalization pipeline
+      # (G5's domain); do not double-label it as the bracket bug.
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.startsWith("::ffff:") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.indexOf("::ffff:") ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $X.includes("::ffff:") ...>
+            ...
+          }
+      # A v4/v6 dispatch pair in the same block means the isIP-family
+      # calls classify already-resolved addresses, not a raw URL
+      # hostname.
+      - pattern-not-inside: |
+          {
+            ...
+            <... $A.isIPv4(...) ...>
+            ...
+            <... $B.isIPv6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $A.isIPv6(...) ...>
+            ...
+            <... $B.isIPv4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIPv4(...) ...>
+            ...
+            <... isIPv6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIPv6(...) ...>
+            ...
+            <... isIPv4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $A.isIPv4(...) ...>
+            ...
+            <... isIPv6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIPv4(...) ...>
+            ...
+            <... $B.isIPv6(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... $A.isIPv6(...) ...>
+            ...
+            <... isIPv4(...) ...>
+            ...
+          }
+      - pattern-not-inside: |
+          {
+            ...
+            <... isIPv6(...) ...>
+            ...
+            <... $B.isIPv4(...) ...>
+            ...
+          }
