@@ -13,7 +13,7 @@ import argparse
 import sys
 
 from mcp_ssrf_audit import __version__
-from mcp_ssrf_audit import classify, report, runner
+from mcp_ssrf_audit import classify, corpus, report, runner
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:
@@ -49,6 +49,22 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     return report.exit_code(result)
 
 
+def _cmd_corpus_validate(args: argparse.Namespace) -> int:
+    try:
+        rep = corpus.validate_corpus(args.corpus, timeout=args.timeout)
+    except corpus.CorpusError as exc:
+        print(f"mcp-ssrf-audit: {exc}", file=sys.stderr)
+        return 2
+    except runner.ScanError as exc:
+        print(f"mcp-ssrf-audit: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        sys.stdout.write(corpus.render_json(rep, ruleset_version=__version__))
+    else:
+        sys.stdout.write(corpus.render_text(rep, ruleset_version=__version__))
+    return corpus.exit_code(rep)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="mcp-ssrf-audit",
@@ -77,6 +93,12 @@ def main(argv: list[str] | None = None) -> int:
         help="path to the corpus directory (default: corpus/)",
     )
     cv.add_argument("--json", action="store_true", help="emit JSON output")
+    cv.add_argument(
+        "--timeout",
+        type=float,
+        default=runner.DEFAULT_TIMEOUT,
+        help="per-file semgrep analysis timeout in seconds (default: %(default)s)",
+    )
 
     args = parser.parse_args(argv)
     if args.version:
@@ -85,9 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "scan":
         return _cmd_scan(args)
     if args.command == "corpus-validate":
-        # U7 owns the harness; kept as a stub here.
-        print("not implemented", file=sys.stderr)
-        return 2
+        return _cmd_corpus_validate(args)
     parser.print_help()
     return 0
 
