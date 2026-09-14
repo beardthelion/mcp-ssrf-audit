@@ -1,0 +1,116 @@
+rules:
+  - id: mcp-ssrf-audit-g0-python
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches an outbound request with no recognized
+      complete SSRF guard on the intra-function taint path (G0: no guard).
+      Weak or unrecognized guards also produce this raw finding; the scan
+      pipeline suppresses or relabels it per the layered site resolution in
+      docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G0
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, python]
+      advisory_refs:
+        - "shape reference: modelcontextprotocol/servers mcp-server-fetch passes the model-supplied URL to a client with redirects followed and no guard (no CVE; live target)"
+      references:
+        - docs/source-sink-matrix.md
+    # Source: any parameter of a function registered as an MCP entry point.
+    # The decorator method name is the signal, not the receiver, so FastMCP,
+    # low-level Server, and vendored variants all match. A tainted `arguments`
+    # dict taints every value extracted from it (arguments["url"],
+    # arguments.get("url")).
+    pattern-sources:
+      - patterns:
+          - pattern: $ARG
+          # metavariable-regex is a full match on the bound text, so the
+          # receiver prefix must be spelled out.
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)'
+          - pattern-either:
+              - pattern-inside: |
+                  @$DECO(...)
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO(...)
+                  async def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  def $F(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  @$DECO
+                  async def $F(..., $ARG, ...):
+                    ...
+    # Sinks: outbound request calls listed in docs/source-sink-matrix.md.
+    # Client-object method calls are recognized by receiver name
+    # (client/session), which is the documented heuristic for
+    # `client.get(url)`-style sinks.
+    pattern-sinks:
+      - pattern-either:
+          - pattern: requests.$M(...)
+          - pattern: httpx.$M(...)
+          - pattern: aiohttp.$M(...)
+          - pattern: urllib.request.$M(...)
+          - patterns:
+              - pattern: $F(...)
+              - metavariable-regex:
+                  metavariable: $F
+                  regex: '(urlopen|urlretrieve)'
+          - patterns:
+              - pattern: $R.$M(...)
+              - metavariable-regex:
+                  metavariable: $R
+                  regex: '(?i).*(client|session)[a-z_0-9]*'
+              - metavariable-regex:
+                  metavariable: $M
+                  regex: '^(get|post|put|delete|head|patch|options|request|stream|fetch|ws_connect)$'
+          - patterns:
+              - pattern: $P.goto(...)
+              - metavariable-regex:
+                  metavariable: $P
+                  regex: '(?i).*(page|browser)[a-z_0-9]*'
+          - patterns:
+              - pattern: $C.request.$M(...)
+              - metavariable-regex:
+                  metavariable: $M
+                  regex: '^(get|post|put|delete|head|patch|options|request|stream)$'
+    # Sanitizers: only the recognized complete-guard call vocabulary
+    # (resolve-all + range check + pinned connect wrappers; see
+    # docs/source-sink-matrix.md). by-side-effect covers check-and-throw
+    # validators that sanitize their argument without returning it.
+    # Deliberately absent: urlparse, ipaddress, is_safe_url, validate_url,
+    # and every other partial or unrecognized guard name. Those leave the
+    # value tainted so the site resolves to a weak class or to
+    # unrecognized-guard downstream instead of going silent.
+    pattern-sanitizers:
+      # A single focused by-side-effect entry covers both forms:
+      # `checked = validate_public_url(url)` (the call result is clean) and
+      # `assert_public_url(x)` (the argument l-value is clean going forward).
+      # focus-metavariable is required for by-side-effect to work, and a
+      # second unfocused sanitizer entry on the same call disables the
+      # side-effect behavior, so this must stay a single entry. Ceiling:
+      # it cannot clean a raw handler parameter (the param binding is the
+      # source and stays tainted for the whole function body in Semgrep
+      # CE); it does clean locals derived from the parameter. Sites that
+      # check-and-throw on the raw param still fire here and resolve to
+      # recognized-complete via the complete-guard site probe
+      # (docs/source-sink-matrix.md).
+      - by-side-effect: true
+        patterns:
+          - pattern: $GUARD($X, ...)
+          - metavariable-regex:
+              metavariable: $GUARD
+              regex: '(?i)((.*[._])?(ssrf|safe_?fetch|safe_?get|safe_?request|assert_?safe|ensure_?public|require_?public)|.*(public_?url|resolve_?and_?pin|pinned_?request))[a-z_0-9]*'
+          - focus-metavariable: $X

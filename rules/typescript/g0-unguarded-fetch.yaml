@@ -1,0 +1,111 @@
+rules:
+  - id: mcp-ssrf-audit-g0-typescript
+    mode: taint
+    message: >-
+      MCP tool-handler input reaches an outbound request with no recognized
+      complete SSRF guard on the intra-function taint path (G0: no guard).
+      Weak or unrecognized guards also produce this raw finding; the scan
+      pipeline suppresses or relabels it per the layered site resolution in
+      docs/source-sink-matrix.md.
+    severity: ERROR
+    languages: [typescript, javascript]
+    metadata:
+      category: security
+      subcategory: [audit]
+      guard_class: G0
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      technology: [mcp, typescript, javascript]
+      advisory_refs:
+        - "shape reference: modelcontextprotocol/servers mcp-server-fetch passes the model-supplied URL to a client with redirects followed and no guard (no CVE; live target)"
+      references:
+        - docs/source-sink-matrix.md
+    # Source: any parameter of a callback registered through an MCP server
+    # registration method (tool, registerTool, setRequestHandler, and the
+    # prompt/resource variants). Also covers object-destructured parameters
+    # such as `async ({ url }) => ...`.
+    pattern-sources:
+      # metavariable-regex is a full match on the bound text.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource)'
+          - pattern-either:
+              - pattern-inside: |
+                  $SRV.$REG(..., async (..., $ARG, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., (..., $ARG, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., async (..., $ARG, ...) => ...)
+              - pattern-inside: |
+                  $SRV.$REG(..., (..., $ARG, ...) => ...)
+              - pattern-inside: |
+                  $SRV.$REG(..., async function $H(..., $ARG, ...) { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., function $H(..., $ARG, ...) { ... })
+      - patterns:
+          - pattern: $PROP
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource)'
+          - pattern-either:
+              - pattern-inside: |
+                  $SRV.$REG(..., async ({ ..., $PROP, ... }, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., ({ ..., $PROP, ... }, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., async ({ ..., $PROP, ... }: $T, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REG(..., ({ ..., $PROP, ... }: $T, ...) => { ... })
+    # Sinks: outbound request calls listed in docs/source-sink-matrix.md.
+    # `fetch` covers both the global and a default node-fetch import.
+    pattern-sinks:
+      - pattern-either:
+          - patterns:
+              - pattern: $F(...)
+              - metavariable-regex:
+                  metavariable: $F
+                  regex: '(fetch|nodeFetch|got|axios|request)'
+          - pattern: axios.$M(...)
+          - pattern: got.$M(...)
+          - patterns:
+              - pattern: $P.goto(...)
+              - metavariable-regex:
+                  metavariable: $P
+                  regex: '(?i).*(page|browser|ctx)[a-z_0-9]*'
+          - patterns:
+              - pattern: $C.request.$M(...)
+              - metavariable-regex:
+                  metavariable: $M
+                  regex: '^(get|post|put|delete|head|patch|options|request|stream)$'
+    # Sanitizers: only the recognized complete-guard call vocabulary
+    # (resolve-all + range check + pinned connect wrappers; see
+    # docs/source-sink-matrix.md). by-side-effect covers check-and-throw
+    # validators. Everything else, including weak shapes like a bare
+    # `new URL(...)` protocol check or an unrecognized helper, leaves the
+    # value tainted so the site resolves to a weak class or to
+    # unrecognized-guard downstream instead of going silent.
+    pattern-sanitizers:
+      # A single focused by-side-effect entry covers both forms:
+      # `const checked = validatePublicUrl(url)` (the call result is clean)
+      # and `assertPublicUrl(x)` (the argument l-value is clean going
+      # forward). focus-metavariable is required for by-side-effect to
+      # work, and a second unfocused sanitizer entry on the same call
+      # disables the side-effect behavior, so this must stay a single
+      # entry. Ceiling: it cannot clean a raw handler parameter (the param
+      # binding is the source and stays tainted for the whole function body
+      # in Semgrep CE); it does clean locals derived from the parameter.
+      # Sites that check-and-throw on the raw param still fire here and
+      # resolve to recognized-complete via the complete-guard site probe
+      # (docs/source-sink-matrix.md).
+      - by-side-effect: true
+        patterns:
+          - pattern: $GUARD($X, ...)
+          - metavariable-regex:
+              metavariable: $GUARD
+              regex: '(?i)((.*[._])?(ssrf|safe_?fetch|safe_?get|safe_?request|assert_?safe|ensure_?public|require_?public)|.*(public_?url|resolve_?and_?pin|pinned_?request))[a-z_0-9]*'
+          - focus-metavariable: $X
