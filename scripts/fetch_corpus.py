@@ -53,7 +53,7 @@ def load_manifest() -> list[dict]:
     return rows
 
 
-def sha_resolves(repo: str, sha: str, probe_path: str) -> bool:
+def sha_resolves(repo: str, sha: str, probe_path: str) -> bool | None:
     """Verify the pinned SHA resolves upstream without fetching full trees.
 
     A HEAD request against the raw content URL doubles as the existence

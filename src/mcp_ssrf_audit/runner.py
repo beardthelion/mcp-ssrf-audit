@@ -66,19 +66,6 @@ class ScanRun:
     # the scan, reported in coverage).
     target_ignore_files: list[str] = field(default_factory=list)
 
-    @property
-    def results(self) -> list[dict]:
-        return self.data.get("results") or []
-
-    @property
-    def errors(self) -> list[dict]:
-        return self.data.get("errors") or []
-
-    @property
-    def scanned_paths(self) -> list[str]:
-        paths = self.data.get("paths") or {}
-        return paths.get("scanned") or []
-
 
 def default_rules_dir() -> Path:
     """Locate the rule tree.

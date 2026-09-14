@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import json
 
+from mcp_ssrf_audit import TAXONOMY_VERSION, classify
+
 SCHEMA_VERSION = "mcp-ssrf-audit/v1"
-TAXONOMY_VERSION = "g0-g10/v1"
 
 # Display titles for the taxonomy. Unknown classes fall back to a generic
 # label so new class rules integrate without code changes here.
@@ -34,7 +35,10 @@ CLASS_TITLES = {
     "G10": "credentials on a model-chosen host",
 }
 
-_ACTIONABLE = ("deterministic", "unrecognized_guard")
+_ACTIONABLE = (
+    classify.RESOLUTION_DETERMINISTIC,
+    classify.RESOLUTION_UNRECOGNIZED,
+)
 
 
 def _fmt_loc(loc: dict) -> str:
@@ -73,9 +77,7 @@ def build_json_report(
         "ruleset_version": ruleset_version,
         "semgrep_version": semgrep_version,
         "target": target,
-        "findings": [
-            s for s in result["sites"] if s["resolution"] in _ACTIONABLE
-        ],
+        "findings": actionable_sites(result),
         "checklist": result["checklist"],
         "coverage": result["coverage"],
     }
@@ -94,10 +96,16 @@ def render_text(
     out.append("")
 
     actionable = actionable_sites(result)
-    determ = [s for s in actionable if s["resolution"] == "deterministic"]
-    unrec = [s for s in actionable if s["resolution"] == "unrecognized_guard"]
+    determ = [
+        s for s in actionable if s["resolution"] == classify.RESOLUTION_DETERMINISTIC
+    ]
+    unrec = [
+        s for s in actionable if s["resolution"] == classify.RESOLUTION_UNRECOGNIZED
+    ]
     complete = [
-        s for s in result["sites"] if s["resolution"] == "recognized_complete"
+        s
+        for s in result["sites"]
+        if s["resolution"] == classify.RESOLUTION_RECOGNIZED_COMPLETE
     ]
 
     # --- deterministic findings, grouped by class ---
@@ -110,7 +118,7 @@ def render_text(
         for s in determ:
             for cls in s["classes"]:
                 by_class.setdefault(cls, []).append(s)
-        for cls in sorted(by_class):
+        for cls in sorted(by_class, key=classify.class_sort_key):
             title = CLASS_TITLES.get(cls, "guard class")
             out.append(f"  [{cls}] {title}")
             for s in by_class[cls]:
@@ -200,12 +208,8 @@ def render_text(
         for f in cov["target_ignore_files"]:
             out.append(f"    {f}")
     sbr = cov["sites_by_resolution"]
-    out.append(
-        "  site resolution: "
-        + ", ".join(f"{k}={sbr[k]}" for k in sorted(sbr))
-        if sbr
-        else "  site resolution: none"
-    )
+    joined = ", ".join(f"{k}={sbr[k]}" for k in sorted(sbr))
+    out.append(f"  site resolution: {joined or 'none'}")
     if cov["verdict"] == "no_mcp_surface_detected":
         out.append("  verdict: no MCP surface detected")
     else:

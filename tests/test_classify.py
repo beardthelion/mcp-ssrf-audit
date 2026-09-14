@@ -71,10 +71,6 @@ def scan(results, scanned=None, errors=None):
     }
 
 
-def sites_by_resolution(result):
-    return {s["resolution"]: [s] and s for s in result["sites"]}
-
-
 def test_g0_site_no_probes():
     result = classify_results(
         scan(

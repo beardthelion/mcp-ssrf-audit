@@ -20,6 +20,7 @@ rule id, so class rules added later integrate without code changes.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
@@ -96,6 +97,13 @@ def _language_of(path: str) -> str:
     return _EXT_LANGUAGE.get(PurePosixPath(path).suffix.lower(), "other")
 
 
+def class_sort_key(cls: str) -> tuple[int, str]:
+    """Numeric ordering for ``G<N>`` labels so G10 sorts after G9."""
+    if len(cls) > 1 and cls[1:].isdigit():
+        return (int(cls[1:]), cls)
+    return (10**6, cls)
+
+
 def _loc(result: dict) -> dict:
     return {
         "path": result.get("path", ""),
@@ -110,15 +118,20 @@ def _extent(result: dict) -> tuple[int, int]:
     return start, end
 
 
-def _function_hint(result: dict, target_root: Path | None) -> str:
+def _function_hint(
+    result: dict,
+    target_root: Path | None,
+    lines_cache: dict[str, list[str] | None],
+) -> str:
     """First line of the matched region, trimmed, for site labeling.
 
     Semgrep's JSON leaves ``extra.lines`` as "requires login", so the
-    label line is read from the target file when a root is given.
+    label line is read from the target file when a root is given. Each
+    file's lines are loaded at most once per call into ``lines_cache``.
     """
-    lines = (result.get("extra") or {}).get("lines") or ""
-    if lines.strip() and lines.strip() != "requires login":
-        return lines.splitlines()[0].strip()[:80]
+    lines = ((result.get("extra") or {}).get("lines") or "").strip()
+    if lines and lines != "requires login":
+        return lines.splitlines()[0][:80]
     line_no = result.get("start", {}).get("line", 0)
     rel = result.get("path", "")
     # Semgrep reports paths as given on the command line: absolute targets
@@ -131,16 +144,22 @@ def _function_hint(result: dict, target_root: Path | None) -> str:
             candidates.append(target_root / Path(rel).relative_to(target_root))
         except ValueError:
             pass
+    seen: set[str] = set()
     for src in candidates:
-        try:
-            with src.open("r", encoding="utf-8", errors="replace") as fh:
-                for i, text in enumerate(fh, start=1):
-                    if i == line_no:
-                        return text.strip()[:80]
-                    if i > line_no:
-                        break
-        except OSError:
+        key = str(src)
+        if key in seen:
             continue
+        seen.add(key)
+        if key not in lines_cache:
+            try:
+                lines_cache[key] = src.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+            except OSError:
+                lines_cache[key] = None
+        file_lines = lines_cache[key]
+        if file_lines is not None and 0 < line_no <= len(file_lines):
+            return file_lines[line_no - 1].strip()[:80]
     return ""
 
 
@@ -233,12 +252,12 @@ def classify_results(
     # Build sites: one per handler extent, then attach sinks, probes, and
     # class findings whose lines fall inside the extent.
     sites: dict[tuple[str, int, int], _Site] = {}
+    sites_by_path: dict[str, list[_Site]] = {}
+    lines_cache: dict[str, list[str] | None] = {}
 
     def site_for(path: str, line: int) -> _Site | None:
         best: _Site | None = None
-        for s in sites.values():
-            if s.path != path:
-                continue
+        for s in sites_by_path.get(path, ()):
             if s.start_line <= line <= s.end_line:
                 if best is None or (s.end_line - s.start_line) < (
                     best.end_line - best.start_line
@@ -251,13 +270,15 @@ def classify_results(
             start, end = _extent(h)
             key = (path, start, end)
             if key not in sites:
-                sites[key] = _Site(
+                site = _Site(
                     path=path,
                     start_line=start,
                     end_line=end,
-                    label=_function_hint(h, root),
+                    label=_function_hint(h, root, lines_cache),
                     test_path=is_test_path(path),
                 )
+                sites[key] = site
+                sites_by_path.setdefault(path, []).append(site)
 
     sinks_outside_handlers: list[dict] = []
     for path, ss in sinks.items():
@@ -295,10 +316,11 @@ def classify_results(
                 path=f.get("path", ""),
                 start_line=start,
                 end_line=end,
-                label=_function_hint(f, root),
+                label=_function_hint(f, root, lines_cache),
                 test_path=is_test_path(f.get("path", "")),
             )
             sites[site.key] = site
+            sites_by_path.setdefault(site.path, []).append(site)
         if cls == NO_GUARD_CLASS:
             site.has_raw_no_guard = True
             if loc not in site.no_guard_locations:
@@ -325,7 +347,7 @@ def classify_results(
                 site.resolution = RESOLUTION_UNRECOGNIZED
             else:
                 site.class_locations[NO_GUARD_CLASS] = [
-                    dict(s) for s in (site.no_guard_locations or site.sinks)
+                    dict(s) for s in site.no_guard_locations
                 ]
                 site.resolution = RESOLUTION_DETERMINISTIC
         elif site.complete_guard_hits:
@@ -341,12 +363,6 @@ def classify_results(
     # sink, or a checklist candidate itself (KTD6 keeps wholly empty scans
     # quiet, and counting candidates keeps checklist-tier corpus instances
     # validatable per R17).
-    def _class_key(cls: str) -> tuple[int, str]:
-        # Numeric ordering for G<N> labels so G10 sorts after G9.
-        if len(cls) > 1 and cls[1:].isdigit():
-            return (int(cls[1:]), cls)
-        return (10**6, cls)
-
     checklist: list[dict] = []
     seen: set[tuple[str, str, int]] = set()
     for r in checklist_hits:
@@ -366,20 +382,17 @@ def classify_results(
                 "test_path": is_test_path(loc["path"]),
             }
         )
-    checklist.sort(key=lambda i: (_class_key(i["class"]), i["path"], i["line"]))
+    checklist.sort(key=lambda i: (class_sort_key(i["class"]), i["path"], i["line"]))
 
     # Coverage (R12). "MCP surface" for the verdict means recognized
     # handlers or network sinks; checklist emission additionally counts
     # checklist candidates as surface evidence.
     scanned = (scan_data.get("paths") or {}).get("scanned") or []
-    by_lang: dict[str, int] = {}
-    for p in scanned:
-        by_lang[_language_of(p)] = by_lang.get(_language_of(p), 0) + 1
+    by_lang = Counter(_language_of(p) for p in scanned)
 
     handler_candidates = sum(len(v) for v in handlers.values())
     sinks_found = sum(len(v) for v in sinks.values())
     mcp_surface = handler_candidates > 0 or sinks_found > 0
-    surface_detected = mcp_surface or bool(checklist)
 
     parse_failures = [
         {
@@ -389,9 +402,7 @@ def classify_results(
         for e in (scan_data.get("errors") or [])
     ]
 
-    by_resolution: dict[str, int] = {}
-    for s in site_records:
-        by_resolution[s["resolution"]] = by_resolution.get(s["resolution"], 0) + 1
+    by_resolution = Counter(s["resolution"] for s in site_records)
 
     coverage = {
         "files_scanned": {
@@ -412,7 +423,4 @@ def classify_results(
             "surface_detected" if mcp_surface else "no_mcp_surface_detected"
         ),
     }
-    if not surface_detected:
-        checklist = []
-
     return {"sites": site_records, "checklist": checklist, "coverage": coverage}

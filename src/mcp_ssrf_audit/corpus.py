@@ -46,13 +46,13 @@ sample_id, files sorted by path, classes sorted numerically).
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from mcp_ssrf_audit import classify, runner
+from mcp_ssrf_audit import TAXONOMY_VERSION, classify, runner
 
 SCHEMA_VERSION = "mcp-ssrf-audit-corpus/v1"
-TAXONOMY_VERSION = "g0-g10/v1"
 
 MANIFEST_NAME = "manifest.jsonl"
 CLEAN = "CLEAN"
@@ -83,14 +83,8 @@ class CorpusError(Exception):
     """Operational failure: bad corpus layout, manifest, or scan."""
 
 
-def _class_sort_key(cls: str) -> tuple[int, str]:
-    if len(cls) > 1 and cls[1:].isdigit():
-        return (int(cls[1:]), cls)
-    return (10**6, cls)
-
-
 def _sorted_classes(classes) -> list[str]:
-    return sorted(classes, key=_class_sort_key)
+    return sorted(classes, key=classify.class_sort_key)
 
 
 def _fmt_set(classes) -> str:
@@ -215,9 +209,9 @@ def scan_file(
     )
     fs = FileScan(semgrep_version=run.semgrep_version)
     for site in result["sites"]:
-        if site["resolution"] == "deterministic":
+        if site["resolution"] == classify.RESOLUTION_DETERMINISTIC:
             fs.classes.update(site["classes"])
-        elif site["resolution"] == "unrecognized_guard":
+        elif site["resolution"] == classify.RESOLUTION_UNRECOGNIZED:
             fs.unrecognized_sites += 1
     for item in result["checklist"]:
         fs.checklist.add(item["class"])
@@ -249,12 +243,11 @@ def _evaluate(
 
     if expected == {CLEAN}:
         status = STATUS_PRECISION if reported else STATUS_CLEAN
+        missing_set: set[str] = set()
     elif row["tier"] == "checklist":
-        checklist_missing = expected - emitted
+        missing_set = expected - emitted
         status = (
-            STATUS_CHECKLIST_MISSING
-            if checklist_missing
-            else STATUS_CHECKLIST_EMITTED
+            STATUS_CHECKLIST_MISSING if missing_set else STATUS_CHECKLIST_EMITTED
         )
         if reported:
             notes.append(
@@ -263,19 +256,13 @@ def _evaluate(
                 "reported, non-gating)"
             )
     else:
+        missing_set = missing
         if missing:
             status = STATUS_MISSED
         elif extra:
             status = STATUS_EXTRA
         else:
             status = STATUS_CAUGHT
-
-    if expected == {CLEAN}:
-        missing_set: set[str] = set()
-    elif row["tier"] == "checklist":
-        missing_set = expected - emitted
-    else:
-        missing_set = missing
 
     return {
         "sample_id": row["sample_id"],
@@ -325,13 +312,41 @@ def validate_corpus(
     else:
         scan_one = scan_fn
 
-    cache: dict[str, FileScan] = {}
+    cache: dict[str, FileScan | BaseException] = {}
 
     def scan_cached(path: Path) -> FileScan:
         key = str(path)
         if key not in cache:
-            cache[key] = scan_one(path)
-        return cache[key]
+            try:
+                cache[key] = scan_one(path)
+            except BaseException as exc:
+                cache[key] = exc
+        val = cache[key]
+        if isinstance(val, BaseException):
+            raise val
+        return val
+
+    # Each corpus file pays a full semgrep startup plus rule-pack compile;
+    # warm the cache across unique resolved paths in parallel when the
+    # real scanner is in use (an injected scan_fn may not be thread-safe).
+    # Errors are cached and re-raised in deterministic evaluation order.
+    if scan_fn is None:
+        unique: list[Path] = []
+        seen_paths: set[str] = set()
+        for row in rows:
+            for _disp, res in resolve_corpus_paths(corpus_dir, row):
+                if res is not None and str(res) not in seen_paths:
+                    seen_paths.add(str(res))
+                    unique.append(res)
+
+        def _warm(p: Path) -> None:
+            try:
+                scan_cached(p)
+            except BaseException:
+                pass
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(_warm, unique))
 
     samples: list[dict] = []
     skipped: list[dict] = []
@@ -534,10 +549,7 @@ def render_text(report: dict, *, ruleset_version: str) -> str:
         "Checklist-tier samples (manual verification required; "
         "never counted in deterministic pass/fail)"
     )
-    out.append(
-        "----------------------------------------------------------------"
-        "----------------"
-    )
+    out.append("-" * 80)
     if not chk:
         out.append("  none")
     for s in chk:

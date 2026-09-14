@@ -52,10 +52,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 def _cmd_corpus_validate(args: argparse.Namespace) -> int:
     try:
         rep = corpus.validate_corpus(args.corpus, timeout=args.timeout)
-    except corpus.CorpusError as exc:
-        print(f"mcp-ssrf-audit: {exc}", file=sys.stderr)
-        return 2
-    except runner.ScanError as exc:
+    except (corpus.CorpusError, runner.ScanError) as exc:
         print(f"mcp-ssrf-audit: {exc}", file=sys.stderr)
         return 2
     if args.json:
@@ -76,15 +73,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="store_true", help="print version and exit")
     sub = parser.add_subparsers(dest="command")
 
+    def add_common(sub: argparse.ArgumentParser) -> None:
+        sub.add_argument("--json", action="store_true", help="emit JSON output")
+        sub.add_argument(
+            "--timeout",
+            type=float,
+            default=runner.DEFAULT_TIMEOUT,
+            help="per-file semgrep analysis timeout in seconds (default: %(default)s)",
+        )
+
     scan = sub.add_parser("scan", help="scan a local repository path")
     scan.add_argument("path", help="path to a cloned repository")
-    scan.add_argument("--json", action="store_true", help="emit JSON output")
-    scan.add_argument(
-        "--timeout",
-        type=float,
-        default=runner.DEFAULT_TIMEOUT,
-        help="per-file semgrep analysis timeout in seconds (default: %(default)s)",
-    )
+    add_common(scan)
 
     cv = sub.add_parser("corpus-validate", help="run rules against the labeled corpus")
     cv.add_argument(
@@ -92,13 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         default="corpus",
         help="path to the corpus directory (default: corpus/)",
     )
-    cv.add_argument("--json", action="store_true", help="emit JSON output")
-    cv.add_argument(
-        "--timeout",
-        type=float,
-        default=runner.DEFAULT_TIMEOUT,
-        help="per-file semgrep analysis timeout in seconds (default: %(default)s)",
-    )
+    add_common(cv)
 
     args = parser.parse_args(argv)
     if args.version:
