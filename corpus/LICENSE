@@ -1,0 +1,10 @@
+The labeled corpus in this directory (manifests, labels, metadata, and
+vendored snippets) is licensed under the Creative Commons Attribution 4.0
+International License (CC BY 4.0).
+
+https://creativecommons.org/licenses/by/4.0/
+
+Vendored source snippets remain under the licenses of their upstream
+projects; see NOTICE for the per-instance attribution and license list.
+Fetched instances materialized under corpus/_fetched/ are not distributed
+with this corpus and remain subject to their upstream licenses.

@@ -1,0 +1,7 @@
+# Self-scan exclusions: fixtures, vendored corpus code, and generated output
+rules/
+corpus/
+tests/fixtures/
+docs/
+dist/
+build/

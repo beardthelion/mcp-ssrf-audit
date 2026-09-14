@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rules-and-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        semgrep: ["1.177.0", "latest"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned semgrep
+        if: matrix.semgrep != 'latest'
+        run: pip install "semgrep==${{ matrix.semgrep }}"
+      - name: Install latest semgrep
+        if: matrix.semgrep == 'latest'
+        run: pip install semgrep
+      - name: Validate rules
+        run: semgrep validate rules/
+      - name: Rule tests
+        run: semgrep test rules/
+      - name: Install package and test deps
+        run: pip install -e ".[test]"
+      - name: Unit tests
+        run: pytest
+      - name: Corpus is never collected or imported
+        run: |
+          pytest --collect-only -q | grep -E "corpus/" && exit 1 || true
+      - name: Build single-file rules bundle
+        run: |
+          mkdir -p dist
+          python3 - <<'PY'
+          import pathlib
+          out = pathlib.Path("dist/mcp-ssrf-audit.yaml")
+          parts = []
+          for p in sorted(pathlib.Path("rules").rglob("*.yaml")):
+              parts.append(f"# --- {p} ---\n" + p.read_text())
+          out.write_text("rules:\n" if not parts else "")
+          # concat rule documents, dropping per-file 'rules:' headers
+          body = []
+          for p in sorted(pathlib.Path("rules").rglob("*.yaml")):
+              for line in p.read_text().splitlines():
+                  if line.strip() == "rules:":
+                      continue
+                  body.append(line)
+              body.append("")
+          out.write_text("rules:\n" + "\n".join(body) + "\n")
+          print(f"wrote {out}")
+          PY

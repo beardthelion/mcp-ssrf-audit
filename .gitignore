@@ -1,0 +1,12 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+
+# Fetched corpus materialization (third-party code at pinned SHAs)
+corpus/_fetched/
+
+# Local planning artifacts (not project content)
+docs/plans/
+2026-09-13-1540-mcp-ssrf-rep-building-writeup.md

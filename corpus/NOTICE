@@ -1,0 +1,8 @@
+Corpus attribution
+
+Each corpus instance lists its upstream repository, license, and advisory
+references in its own metadata.json. This NOTICE summarizes the vendored
+instances; fetched instances (materialized under corpus/_fetched/ at a
+pinned commit) are not vendored here.
+
+(No vendored instances yet.)
