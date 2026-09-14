@@ -1,0 +1,106 @@
+rules:
+  # Site-enumerator and guard-shape probes for the KTD7 layered site
+  # resolution. Search-mode rules: they mark locations, they do not issue
+  # verdicts. classify.py groups their hits by enclosing registration call
+  # (the site extent each handler_source match spans) and resolves each
+  # sink site per docs/source-sink-matrix.md.
+  - id: mcp-ssrf-audit-probe-handler-source-typescript
+    message: >-
+      Site probe: MCP handler candidate (entry-point enumerator). Consumed
+      by the mcp-ssrf-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: handler_source
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Same registration-method vocabulary as the G0 source spec. The match
+    # spans the whole registration call, so a sink inside an inline
+    # callback falls inside the site extent classify.py uses.
+    pattern-either:
+      - patterns:
+          - pattern: $SRV.$REG(...)
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '^(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource)$'
+      - patterns:
+          - pattern: $REG(...)
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '^(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource)$'
+
+  - id: mcp-ssrf-audit-probe-network-sink-typescript
+    message: >-
+      Site probe: outbound request call (network-sink enumerator). Consumed
+      by the mcp-ssrf-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: network_sink
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Identical sink vocabulary to rules/typescript/g0-unguarded-fetch.yaml.
+    pattern-either:
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(fetch|nodeFetch|got|axios|request)'
+      - pattern: axios.$M(...)
+      - pattern: got.$M(...)
+      - patterns:
+          - pattern: $P.goto(...)
+          - metavariable-regex:
+              metavariable: $P
+              regex: '(?i).*(page|browser|ctx)[a-z_0-9]*'
+      - patterns:
+          - pattern: $C.request.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(get|post|put|delete|head|patch|options|request|stream)$'
+
+  - id: mcp-ssrf-audit-probe-complete-guard-typescript
+    message: >-
+      Site probe: recognized complete-guard call shape (resolve-all + range
+      check + pinned connect wrapper, recognized by callee name). Consumed
+      by the mcp-ssrf-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: complete_guard
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    patterns:
+      - pattern: $GUARD(...)
+      - metavariable-regex:
+          metavariable: $GUARD
+          regex: '(?i)((.*[._])?(ssrf|safe_?fetch|safe_?get|safe_?request|assert_?safe|ensure_?public|require_?public)|.*(public_?url|resolve_?and_?pin|pinned_?request))[a-z_0-9]*'
+
+  - id: mcp-ssrf-audit-probe-intervening-validation-typescript
+    message: >-
+      Site probe: bounded intervening call or check-and-throw whose shape
+      reads as validation. Consumed by the mcp-ssrf-audit CLI site
+      resolution; a hit with no higher-precedence match resolves the site
+      to "guard detected, shape unrecognized, manual review".
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      probe_role: intervening_validation
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      - patterns:
+          - pattern: $CALL(...)
+          - metavariable-regex:
+              metavariable: $CALL
+              regex: '(?i).*(valid|check|verif|assert|is_?safe|is_?allowed|is_?ip|ensure|saniti[sz]e|guard|allow|block|deny|filter|resolv|inspect|secure|protect|private|internal|ip_?addr|host_?name)[a-z_0-9]*'
+      - pattern: |
+          if ($COND) {
+            ...
+            throw $E;
+            ...
+          }

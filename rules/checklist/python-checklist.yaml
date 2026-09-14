@@ -1,0 +1,119 @@
+rules:
+  # Checklist-tier candidate enumerators for the structural classes
+  # (KTD6). These rules emit candidate sites to verify manually; they never
+  # emit a verdict. classify.py turns each hit into a checklist item and
+  # only prints the checklist when an MCP surface was detected.
+  - id: mcp-ssrf-audit-checklist-g7-python
+    message: >-
+      G7 checklist candidate: DNS resolution site. Verify the outbound
+      request connects to the address that was resolved and validated
+      (connect-time pinning), not to a fresh DNS answer.
+    severity: INFO
+    languages: [python]
+    metadata:
+      guard_class: G7
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        connect-time pinning: the fetch must connect to the validated
+        resolved address, not re-resolve the hostname
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    # Enumerates resolver calls. Search mode cannot express
+    # resolve-validate-then-discard, so every resolve site is a candidate;
+    # correct pinned-connect guards appear alongside vulnerable ones.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: $R.$M(...)
+              - metavariable-regex:
+                  metavariable: $R
+                  regex: '(?i).*(socket|dns|resolver|nameserver|loop)[a-z_0-9.]*'
+              - metavariable-regex:
+                  metavariable: $M
+                  regex: '(?i)^(getaddrinfo|gethostbyname|gethostbyname_ex|gethostbyaddr|resolve[a-z_0-9]*|lookup|query)$'
+          - patterns:
+              - pattern: $F(...)
+              - metavariable-regex:
+                  metavariable: $F
+                  regex: '(?i)^(getaddrinfo|gethostbyname|gethostbyname_ex|gethostbyaddr)$'
+
+  - id: mcp-ssrf-audit-checklist-g9-python
+    message: >-
+      G9 checklist candidate: MCP entry point. Verify every network sink
+      reachable from this handler goes through a complete guard, and that
+      no second entry point reaches the same sinks unguarded.
+    severity: INFO
+    languages: [python]
+    metadata:
+      guard_class: G9
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        guard coverage across entry points: every path from this handler
+        to a network sink shares the same complete guard
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    # Same registration vocabulary as the handler_source probe.
+    patterns:
+      - metavariable-regex:
+          metavariable: $DECO
+          regex: '(.*\.)?(tool|call_tool|get_prompt)'
+      - pattern-either:
+          - pattern: |
+              @$DECO(...)
+              def $F(...):
+                ...
+          - pattern: |
+              @$DECO(...)
+              async def $F(...):
+                ...
+          - pattern: |
+              @$DECO
+              def $F(...):
+                ...
+          - pattern: |
+              @$DECO
+              async def $F(...):
+                ...
+
+  - id: mcp-ssrf-audit-checklist-g10-python
+    message: >-
+      G10 checklist candidate: credential or auth-header attachment. Verify
+      the request host is not model-chosen; a token sent to a
+      model-selected URL leaks it.
+    severity: INFO
+    languages: [python]
+    metadata:
+      guard_class: G10
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        credential attachment: headers, auth kwargs, and credential dict
+        keys must not follow a model-chosen host
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      # Call carrying a headers=/auth=/credential-ish keyword argument.
+      - patterns:
+          - pattern: $F(..., $KW=$V, ...)
+          - metavariable-regex:
+              metavariable: $KW
+              regex: '(?i)^(headers?|auth|authorization|credentials?|api_?key|access_?token|bearer_?token)$'
+      # Dict literal carrying a credential-ish string key.
+      - patterns:
+          - pattern: '{$KEY: $V, ...}'
+          - metavariable-regex:
+              metavariable: $KEY
+              regex: >-
+                (?i)["'][^"']*(authorization|api[-_]?key|x-api-key|access[-_]?token|auth[-_]?token|bearer|secret|credential)[^"']*["']
+      # Subscript assignment of a credential-ish header.
+      - patterns:
+          - pattern: $H[$KEY] = $V
+          - metavariable-regex:
+              metavariable: $KEY
+              regex: >-
+                (?i)["'][^"']*(authorization|api[-_]?key|x-api-key|access[-_]?token|auth[-_]?token|bearer|secret|credential)[^"']*["']

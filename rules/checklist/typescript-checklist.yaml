@@ -1,0 +1,106 @@
+rules:
+  # Checklist-tier candidate enumerators for the structural classes
+  # (KTD6). These rules emit candidate sites to verify manually; they never
+  # emit a verdict. classify.py turns each hit into a checklist item and
+  # only prints the checklist when an MCP surface was detected.
+  - id: mcp-ssrf-audit-checklist-g7-typescript
+    message: >-
+      G7 checklist candidate: DNS resolution site. Verify the outbound
+      request connects to the address that was resolved and validated
+      (connect-time pinning), not to a fresh DNS answer.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      guard_class: G7
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        connect-time pinning: the fetch must connect to the validated
+        resolved address, not re-resolve the hostname
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    # Bare `resolve(` is deliberately excluded: Promise.resolve-style calls
+    # dominate. `lookup`, the typed resolve variants, and any receiver whose
+    # name reads as a DNS resolver are the candidate sites.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: $R.$M(...)
+              - metavariable-regex:
+                  metavariable: $R
+                  regex: '(?i).*(dns|resolver|nameserver)[a-z_0-9.]*'
+              - metavariable-regex:
+                  metavariable: $M
+                  regex: '(?i)^(lookup|resolve[a-z0-9_]*|reverse|getservers)$'
+          - patterns:
+              - pattern: $F(...)
+              - metavariable-regex:
+                  metavariable: $F
+                  regex: '(?i)^(lookup|resolve4|resolve6|resolveany|reverse)$'
+
+  - id: mcp-ssrf-audit-checklist-g9-typescript
+    message: >-
+      G9 checklist candidate: MCP entry point. Verify every network sink
+      reachable from this handler goes through a complete guard, and that
+      no second entry point reaches the same sinks unguarded.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      guard_class: G9
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        guard coverage across entry points: every path from this handler
+        to a network sink shares the same complete guard
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      - patterns:
+          - pattern: $SRV.$REG(...)
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '^(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource)$'
+      - patterns:
+          - pattern: $REG(...)
+          - metavariable-regex:
+              metavariable: $REG
+              regex: '^(tool|registerTool|callTool|getPrompt|setRequestHandler|prompt|resource)$'
+
+  - id: mcp-ssrf-audit-checklist-g10-typescript
+    message: >-
+      G10 checklist candidate: credential or auth-header attachment. Verify
+      the request host is not model-chosen; a token sent to a
+      model-selected URL leaks it.
+    severity: INFO
+    languages: [typescript, javascript]
+    metadata:
+      guard_class: G10
+      tier: checklist
+      probe_role: checklist
+      verify: >-
+        credential attachment: header objects and header setters must not
+        follow a model-chosen host
+      category: security
+      references:
+        - docs/source-sink-matrix.md
+    pattern-either:
+      # Object literal carrying a credential-ish key (quoted or bare).
+      - patterns:
+          - pattern: '{$KEY: $V, ...}'
+          - metavariable-regex:
+              metavariable: $KEY
+              regex: >-
+                (?i)["']?[a-z0-9_.-]*(authorization|api[-_]?key|x-api-key|access[-_]?token|auth[-_]?token|bearer|secret|credential)[a-z0-9_.-]*["']?
+      # Header setter calls: headers.set("Authorization", v),
+      # headers.append(...), res.setHeader(...).
+      - patterns:
+          - pattern-either:
+              - pattern: $R.set($K, ...)
+              - pattern: $R.append($K, ...)
+              - pattern: $R.setHeader($K, ...)
+          - metavariable-regex:
+              metavariable: $K
+              regex: >-
+                (?i)["'][^"']*(authorization|api[-_]?key|x-api-key|access[-_]?token|auth[-_]?token|bearer|secret|credential)[^"']*["']

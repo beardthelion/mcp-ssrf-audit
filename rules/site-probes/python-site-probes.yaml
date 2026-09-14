@@ -1,0 +1,136 @@
+rules:
+  # Site-enumerator and guard-shape probes for the KTD7 layered site
+  # resolution. These are search-mode rules: they mark locations, they do
+  # not issue verdicts. classify.py groups their hits by enclosing handler
+  # (the site extent each handler_source match spans) and resolves each
+  # sink site per docs/source-sink-matrix.md.
+  - id: mcp-ssrf-audit-probe-handler-source-python
+    message: >-
+      Site probe: MCP handler candidate (entry-point enumerator). Consumed
+      by the mcp-ssrf-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: handler_source
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Same registration vocabulary as the G0 source spec. The match spans
+    # the decorated function so the hit's line range is the site extent
+    # classify.py uses for the same-function guard/sink join.
+    patterns:
+      - metavariable-regex:
+          metavariable: $DECO
+          regex: '(.*\.)?(tool|call_tool|get_prompt)'
+      - pattern-either:
+          - pattern: |
+              @$DECO(...)
+              def $F(...):
+                ...
+          - pattern: |
+              @$DECO(...)
+              async def $F(...):
+                ...
+          - pattern: |
+              @$DECO
+              def $F(...):
+                ...
+          - pattern: |
+              @$DECO
+              async def $F(...):
+                ...
+
+  - id: mcp-ssrf-audit-probe-network-sink-python
+    message: >-
+      Site probe: outbound request call (network-sink enumerator). Consumed
+      by the mcp-ssrf-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: network_sink
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Identical sink vocabulary to rules/python/g0-unguarded-fetch.yaml so
+    # every sink the taint rules can fire on is also enumerated here.
+    pattern-either:
+      - pattern: requests.$M(...)
+      - pattern: httpx.$M(...)
+      - pattern: aiohttp.$M(...)
+      - pattern: urllib.request.$M(...)
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: '(urlopen|urlretrieve)'
+      - patterns:
+          - pattern: $R.$M(...)
+          - metavariable-regex:
+              metavariable: $R
+              regex: '(?i).*(client|session)[a-z_0-9]*'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(get|post|put|delete|head|patch|options|request|stream|fetch|ws_connect)$'
+      - patterns:
+          - pattern: $P.goto(...)
+          - metavariable-regex:
+              metavariable: $P
+              regex: '(?i).*(page|browser)[a-z_0-9]*'
+      - patterns:
+          - pattern: $C.request.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(get|post|put|delete|head|patch|options|request|stream)$'
+
+  - id: mcp-ssrf-audit-probe-complete-guard-python
+    message: >-
+      Site probe: recognized complete-guard call shape (resolve-all + range
+      check + pinned connect wrapper, recognized by callee name). Consumed
+      by the mcp-ssrf-audit CLI site resolution; not a standalone finding.
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: complete_guard
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # The same callee-name vocabulary as the G0 sanitizer. A site whose
+    # extent contains this call resolves to recognized-complete unless a
+    # weak-class finding outranks it.
+    patterns:
+      - pattern: $GUARD(...)
+      - metavariable-regex:
+          metavariable: $GUARD
+          regex: '(?i)((.*[._])?(ssrf|safe_?fetch|safe_?get|safe_?request|assert_?safe|ensure_?public|require_?public)|.*(public_?url|resolve_?and_?pin|pinned_?request))[a-z_0-9]*'
+
+  - id: mcp-ssrf-audit-probe-intervening-validation-python
+    message: >-
+      Site probe: bounded intervening call or check-and-throw whose shape
+      reads as validation. Consumed by the mcp-ssrf-audit CLI site
+      resolution; a hit with no higher-precedence match resolves the site
+      to "guard detected, shape unrecognized, manual review".
+    severity: INFO
+    languages: [python]
+    metadata:
+      probe_role: intervening_validation
+      category: audit-probe
+      references:
+        - docs/source-sink-matrix.md
+    # Two bounded shapes: a call whose callee name reads as validation, or
+    # a check-and-throw (an `if` block containing `raise`). Overlap with
+    # the complete-guard vocabulary is intentional; the complete-guard
+    # probe wins by precedence at classify time. `urlparse`/`ip_address`
+    # style names are deliberately absent from the regex: a parse alone is
+    # not a validation attempt, and the matrix assigns urlparse-only paths
+    # to G0.
+    pattern-either:
+      - patterns:
+          - pattern: $CALL(...)
+          - metavariable-regex:
+              metavariable: $CALL
+              regex: '(?i).*(valid|check|verif|assert|is_?safe|is_?allowed|is_?ip|ensure|saniti[sz]e|guard|allow|block|deny|filter|resolv|inspect|secure|protect|private|internal|ip_?addr|host_?name)[a-z_0-9]*'
+      - pattern: |
+          if $COND:
+            ...
+            raise $E
+            ...
