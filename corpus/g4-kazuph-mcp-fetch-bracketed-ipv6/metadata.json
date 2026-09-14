@@ -1,0 +1,47 @@
+{
+  "instance_id": "g4-kazuph-mcp-fetch-bracketed-ipv6",
+  "repo": "kazuph/mcp-fetch",
+  "repo_url": "https://github.com/kazuph/mcp-fetch",
+  "license_spdx": "MIT",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "eba4abf2f9e7b77acd11546a9f283bd1e30faecd",
+      "files": [
+        {
+          "upstream_path": "index.ts",
+          "corpus_path": "corpus/g4-kazuph-mcp-fetch-bracketed-ipv6/vulnerable/index.ts",
+          "labeled_lines": [
+            80,
+            92,
+            104,
+            118,
+            123,
+            135,
+            175
+          ],
+          "role": "both"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "G4"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2026-80347"
+    ],
+    "ghsa": [],
+    "links": [
+      "https://github.com/kazuph/mcp-fetch/commit/eba4abf2f9e7b77acd11546a9f283bd1e30faecd"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "isSafeUrl() calls net.isIP(u.hostname) at line 118. WHATWG URL.hostname keeps the brackets on IPv6 literals, so net.isIP('[::1]') returns 0 and the private-IP branches never run; the hostname branch then resolves '[::1]', dns.lookup throws, resolveAllIps() swallows it to [] and the guard returns ok:true. The HTTP client strips brackets and connects anyway. This is the first commit containing the guard (eba4abf, 2025-09-24); the same shape persists at HEAD 418e58aad2d0 plus a MCP_FETCH_DISABLE_SSRF_GUARD env kill-switch, so no patched state exists. Redirects are manually re-validated per hop (safeFollowFetch, line 175), so the site is not G6.",
+  "last_verified": "2026-09-14"
+}

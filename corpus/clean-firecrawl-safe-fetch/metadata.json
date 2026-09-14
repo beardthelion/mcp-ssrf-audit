@@ -1,0 +1,40 @@
+{
+  "instance_id": "clean-firecrawl-safe-fetch",
+  "repo": "firecrawl/firecrawl",
+  "repo_url": "https://github.com/firecrawl/firecrawl",
+  "license_spdx": "AGPL-3.0",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "fetched",
+  "states": {
+    "fetched": {
+      "sha": "b3cc08daf21980a9aa970a9dc60083549cf73eb2",
+      "files": [
+        {
+          "upstream_path": "apps/api/src/scraper/scrapeURL/engines/utils/safeFetch.ts",
+          "corpus_path": "corpus/_fetched/clean-firecrawl-safe-fetch/apps/api/src/scraper/scrapeURL/engines/utils/safeFetch.ts",
+          "labeled_lines": [
+            15,
+            46,
+            54,
+            58
+          ],
+          "role": "guard"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "fetched": [
+      "CLEAN"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": []
+  },
+  "fetched_paths": [],
+  "notes": "Recognized-complete exemplar. safeFetch re-checks the connected peer's remoteAddress with ipaddr.js inside the undici connect hook (lines 46-58), the rare correct answer to G7. AGPL-3.0 upstream, so this instance is fetched-only per the corpus licensing rule.",
+  "last_verified": "2026-09-14"
+}

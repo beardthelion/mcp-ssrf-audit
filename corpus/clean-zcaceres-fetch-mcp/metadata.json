@@ -1,0 +1,43 @@
+{
+  "instance_id": "clean-zcaceres-fetch-mcp",
+  "repo": "zcaceres/fetch-mcp",
+  "repo_url": "https://github.com/zcaceres/fetch-mcp",
+  "license_spdx": "MIT",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "guarded": {
+      "sha": "1ddb1a59cb09a2d38e759f2d7a97829680cbe514",
+      "files": [
+        {
+          "upstream_path": "src/Fetcher.ts",
+          "corpus_path": "corpus/clean-zcaceres-fetch-mcp/guarded/src/Fetcher.ts",
+          "labeled_lines": [
+            19,
+            27,
+            30,
+            37,
+            44,
+            61,
+            76
+          ],
+          "role": "both"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "guarded": [
+      "CLEAN"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": []
+  },
+  "fetched_paths": [],
+  "notes": "Recognized-complete exemplar. validateUrl() strips brackets before the private-ip library check (lines 27-30), validateResolvedIp() resolves DNS and checks the answer (lines 37-53), and the redirect hop is re-validated (_fetch lines 76-79). Residual note: the final fetch() still resolves at connect time, a G7-shaped gap the checklist tier would flag for manual review; no deterministic finding should fire.",
+  "last_verified": "2026-09-14"
+}

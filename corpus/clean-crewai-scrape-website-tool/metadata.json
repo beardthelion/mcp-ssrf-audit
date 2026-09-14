@@ -1,0 +1,52 @@
+{
+  "instance_id": "clean-crewai-scrape-website-tool",
+  "repo": "crewAIInc/crewAI",
+  "repo_url": "https://github.com/crewAIInc/crewAI",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "guarded": {
+      "sha": "894898f84c4ac0a89f24bf7bee6c381eb0e67f51",
+      "files": [
+        {
+          "upstream_path": "lib/crewai-tools/src/crewai_tools/tools/scrape_website_tool/scrape_website_tool.py",
+          "corpus_path": "corpus/clean-crewai-scrape-website-tool/guarded/lib/crewai-tools/src/crewai_tools/tools/scrape_website_tool/scrape_website_tool.py",
+          "labeled_lines": [
+            7,
+            77
+          ],
+          "role": "guard-call"
+        },
+        {
+          "upstream_path": "lib/crewai-tools/src/crewai_tools/security/safe_requests.py",
+          "corpus_path": "corpus/clean-crewai-scrape-website-tool/guarded/lib/crewai-tools/src/crewai_tools/security/safe_requests.py",
+          "labeled_lines": [
+            125
+          ],
+          "role": "guard"
+        },
+        {
+          "upstream_path": "lib/crewai-tools/src/crewai_tools/security/ssrf_adapter.py",
+          "corpus_path": "corpus/clean-crewai-scrape-website-tool/guarded/lib/crewai-tools/src/crewai_tools/security/ssrf_adapter.py",
+          "labeled_lines": [],
+          "role": "guard"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "guarded": [
+      "CLEAN"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": []
+  },
+  "fetched_paths": [],
+  "notes": "Recognized-complete exemplar. ScrapeWebsiteTool._run calls safe_get() (line 77), which validates every redirect hop and routes through SSRFProtectedAdapter with a post-connect getpeername() re-check, the in-repo fix for the G7 class. The guard is helper-factored, so an intra-function engine should report unrecognized-guard rather than a weak class; either way no deterministic finding is expected.",
+  "last_verified": "2026-09-14"
+}

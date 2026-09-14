@@ -1,0 +1,66 @@
+{
+  "instance_id": "g4-open-websearch-bracketed-ipv6",
+  "repo": "Aas-ee/open-webSearch",
+  "repo_url": "https://github.com/Aas-ee/open-webSearch",
+  "license_spdx": "Apache-2.0",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "e29b2357a11d25c9288e1bb006728ddde4d4b6b1",
+      "files": [
+        {
+          "upstream_path": "src/utils/urlSafety.ts",
+          "corpus_path": "corpus/g4-open-websearch-bracketed-ipv6/vulnerable/src/utils/urlSafety.ts",
+          "labeled_lines": [
+            84,
+            95,
+            114,
+            133
+          ],
+          "role": "guard"
+        }
+      ]
+    },
+    "patched": {
+      "sha": "8c35c6bb5b7690ca2740eef135e74ebc43571614",
+      "files": [
+        {
+          "upstream_path": "src/utils/urlSafety.ts",
+          "corpus_path": "corpus/g4-open-websearch-bracketed-ipv6/patched/src/utils/urlSafety.ts",
+          "labeled_lines": [
+            6,
+            8,
+            12,
+            16
+          ],
+          "role": "guard"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "G4"
+    ],
+    "patched": [
+      "CLEAN"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2026-42260"
+    ],
+    "ghsa": [
+      "GHSA-v228-72c7-fx8j"
+    ],
+    "links": [
+      "https://github.com/Aas-ee/open-webSearch/security/advisories/GHSA-v228-72c7-fx8j",
+      "https://github.com/Aas-ee/open-webSearch/commit/8c35c6bb5b7690ca2740eef135e74ebc43571614"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "Vulnerable isPrivateOrLocalHostname() (urlSafety.ts:95) lowercases and trims but never strips brackets, so isIP('[::1]') is 0 and the literal passes; same bracketed-IPv6 miss for any [::ffff:x] or [fe80::] literal. The fix strips brackets and delegates range checks to ipaddr.js. The advisory also cites non-resolving hosts; fix version 2.1.7. Patched file notes the authoritative boundary moved to request-filtering-agent in src/utils/httpRequest.ts (connect-time re-validation, not vendored here).",
+  "last_verified": "2026-09-14"
+}

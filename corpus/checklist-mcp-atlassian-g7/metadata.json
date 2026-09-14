@@ -1,0 +1,80 @@
+{
+  "instance_id": "checklist-mcp-atlassian-g7",
+  "repo": "sooperset/mcp-atlassian",
+  "repo_url": "https://github.com/sooperset/mcp-atlassian",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "checklist",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "52b9b0997681e87244b20d58034deae89c91631e",
+      "files": [
+        {
+          "upstream_path": "src/mcp_atlassian/servers/dependencies.py",
+          "corpus_path": "corpus/checklist-mcp-atlassian-g7/vulnerable/src/mcp_atlassian/servers/dependencies.py",
+          "labeled_lines": [
+            258,
+            271,
+            463,
+            478
+          ],
+          "role": "sink"
+        },
+        {
+          "upstream_path": "src/mcp_atlassian/utils/urls.py",
+          "corpus_path": "corpus/checklist-mcp-atlassian-g7/vulnerable/src/mcp_atlassian/utils/urls.py",
+          "labeled_lines": [
+            7,
+            24,
+            25,
+            26,
+            27,
+            28
+          ],
+          "role": "guard"
+        }
+      ]
+    },
+    "patched": {
+      "sha": "5cd697dfce9116ef330b8dc7a91291640e0528d9",
+      "files": [
+        {
+          "upstream_path": "src/mcp_atlassian/utils/urls.py",
+          "corpus_path": "corpus/checklist-mcp-atlassian-g7/patched/src/mcp_atlassian/utils/urls.py",
+          "labeled_lines": [
+            48,
+            100,
+            156,
+            166,
+            175
+          ],
+          "role": "guard"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "G7"
+    ],
+    "patched": [
+      "G7"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2026-27826"
+    ],
+    "ghsa": [
+      "GHSA-7r34-79r5-rcc9"
+    ],
+    "links": [
+      "https://github.com/sooperset/mcp-atlassian/security/advisories/GHSA-7r34-79r5-rcc9",
+      "https://github.com/sooperset/mcp-atlassian/commit/5cd697dfce9116ef330b8dc7a91291640e0528d9"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "Checklist tier. CVE-2026-27826: X-Atlassian-Jira-Url / X-Atlassian-Confluence-Url headers reached the fetcher unvalidated (dependencies.py:258-271, 463-478). The fix validates via validate_url_for_ssrf() with _check_dns_resolution() using socket.getaddrinfo (patched urls.py:156-175) but the resolved addresses are discarded; the client resolves again at connect time, which is the G7 resolve-then-discard TOCTOU shape to verify manually. Note the vulnerable urls.py also shows a G2-style regex blocklist in is_atlassian_cloud_url (lines 24-30); it is a cloud-vs-datacenter classifier, not the SSRF guard, so it is not separately labeled.",
+  "last_verified": "2026-09-14"
+}

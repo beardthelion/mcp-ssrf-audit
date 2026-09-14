@@ -1,0 +1,44 @@
+{
+  "instance_id": "g0-mcp-server-fetch",
+  "repo": "modelcontextprotocol/servers",
+  "repo_url": "https://github.com/modelcontextprotocol/servers",
+  "license_spdx": "MIT OR Apache-2.0",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "d73f99efbfd40c3aa1b61e88728b3d49fb52608f",
+      "files": [
+        {
+          "upstream_path": "src/fetch/src/mcp_server_fetch/server.py",
+          "corpus_path": "corpus/g0-mcp-server-fetch/vulnerable/src/fetch/src/mcp_server_fetch/server.py",
+          "labeled_lines": [
+            111,
+            121,
+            123,
+            224,
+            257
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "G0"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [],
+    "ghsa": [],
+    "links": [
+      "https://github.com/modelcontextprotocol/servers/issues/3741",
+      "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "Reference server fetch tool. fetch_url() (line 111) passes a model-supplied URL to httpx client.get with follow_redirects=True (line 123) and no address validation anywhere; the only checks are robots.txt and content-length. call_tool (line 224) is the only gated surface and get_prompt (line 257) reaches the same sink path. Repo SECURITY.md declares it ineligible for vulnerability reports; this is the canonical unguarded baseline. Upstream is mid MIT-to-Apache-2.0 license transition; see upstream LICENSE.",
+  "last_verified": "2026-09-14"
+}

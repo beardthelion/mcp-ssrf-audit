@@ -3,6 +3,65 @@ Corpus attribution
 Each corpus instance lists its upstream repository, license, and advisory
 references in its own metadata.json. This NOTICE summarizes the vendored
 instances; fetched instances (materialized under corpus/_fetched/ at a
-pinned commit) are not vendored here.
+pinned commit by scripts/fetch_corpus.py) are not vendored here.
 
-(No vendored instances yet.)
+Vendored instances (verbatim source snapshots at the pinned SHAs in
+metadata.json, redistributed under their upstream licenses):
+
+- modelcontextprotocol/servers (src/fetch MCP server)
+  License: MIT OR Apache-2.0 (upstream license transition in progress)
+  Instance: g0-mcp-server-fetch
+
+- jae-jae/fetcher-mcp
+  License: MIT
+  Instance: g1-fetcher-mcp-scheme-only
+
+- ***REMOVED***/***REMOVED***
+  License: MIT
+  Instance: ***REMOVED***
+
+- MervinPraison/PraisonAI (praisonaiagents package)
+  License: MIT
+  Instances: g3-praisonaiagents-spider-hostname,
+             g6-praisonaiagents-web-crawl-redirect
+
+- kazuph/mcp-fetch
+  License: MIT
+  Instance: g4-kazuph-mcp-fetch-bracketed-ipv6
+
+- Aas-ee/open-webSearch
+  License: Apache-2.0
+  Instance: g4-open-websearch-bracketed-ipv6
+
+- ymw0407/auth-fetch-mcp
+  License: MIT
+  Instance: g5-auth-fetch-mcp-ipv6-normalization
+
+- ***REMOVED***/***REMOVED***
+  License: MIT
+  Instance: ***REMOVED***
+
+- sooperset/mcp-atlassian
+  License: MIT
+  Instance: checklist-mcp-atlassian-g7
+
+- crewAIInc/crewAI (crewai-tools package)
+  License: MIT
+  Instances: ***REMOVED***, clean-crewai-scrape-website-tool
+
+- ***REMOVED***/***REMOVED***
+  License: MIT
+  Instance: ***REMOVED***
+
+- zcaceres/fetch-mcp
+  License: MIT
+  Instance: clean-zcaceres-fetch-mcp
+
+Fetched-only instances (not vendored; see each metadata.json):
+
+- ***REMOVED***/***REMOVED*** (no declared license)
+- kazuph/mcp-fetch HEAD snapshot (MIT)
+- firecrawl/firecrawl safeFetch.ts (AGPL-3.0)
+- ***REMOVED***/***REMOVED*** (MIT)
+- ***REMOVED*** (CC-BY-4.0)
+- ***REMOVED***/***REMOVED*** (MIT)

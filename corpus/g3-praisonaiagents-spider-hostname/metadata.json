@@ -1,0 +1,68 @@
+{
+  "instance_id": "g3-praisonaiagents-spider-hostname",
+  "repo": "MervinPraison/PraisonAI",
+  "repo_url": "https://github.com/MervinPraison/PraisonAI",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "9991e00f5245de182321288918e7ac1add390d0d",
+      "files": [
+        {
+          "upstream_path": "src/praisonai-agents/praisonaiagents/tools/spider_tools.py",
+          "corpus_path": "corpus/g3-praisonaiagents-spider-hostname/vulnerable/src/praisonai-agents/praisonaiagents/tools/spider_tools.py",
+          "labeled_lines": [
+            26,
+            56,
+            61,
+            65,
+            74,
+            106,
+            173
+          ],
+          "role": "both"
+        }
+      ]
+    },
+    "patched": {
+      "sha": "2f9677abb2ea68eab864ee8b6a828fd0141612e1",
+      "files": [
+        {
+          "upstream_path": "src/praisonai-agents/praisonaiagents/tools/spider_tools.py",
+          "corpus_path": "corpus/g3-praisonaiagents-spider-hostname/patched/src/praisonai-agents/praisonaiagents/tools/spider_tools.py",
+          "labeled_lines": [
+            56,
+            61
+          ],
+          "role": "guard"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "G3",
+      "G6"
+    ],
+    "patched": [
+      "G6"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2026-55526"
+    ],
+    "ghsa": [
+      "GHSA-x44h-65qv-cw74"
+    ],
+    "links": [
+      "https://github.com/MervinPraison/PraisonAI/security/advisories/GHSA-x44h-65qv-cw74",
+      "https://github.com/MervinPraison/PraisonAI/commit/2f9677abb2ea68eab864ee8b6a828fd0141612e1"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "Vulnerable _host_is_blocked() tries ipaddress.ip_address() then socket.inet_aton() and returns False (not blocked) when both fail, so every resolvable hostname passes; bypass via any DNS name like 127.0.0.1.nip.io. The fix resolves via socket.getaddrinfo() and blocks on any private answer or gaierror (fails closed). Both states also carry G6: session.get() follows redirects with no per-hop re-validation (GHSA-6h9p-93hq-q7h6, CVE-2026-57115, the SpiderTools redirect-target advisory, is still open against the patched state).",
+  "last_verified": "2026-09-14"
+}

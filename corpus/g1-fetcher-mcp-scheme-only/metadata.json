@@ -1,0 +1,62 @@
+{
+  "instance_id": "g1-fetcher-mcp-scheme-only",
+  "repo": "jae-jae/fetcher-mcp",
+  "repo_url": "https://github.com/jae-jae/fetcher-mcp",
+  "license_spdx": "MIT",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "8754aff66e3d9207502207bf82a493f45f556bb8",
+      "files": [
+        {
+          "upstream_path": "src/utils/urlValidator.ts",
+          "corpus_path": "corpus/g1-fetcher-mcp-scheme-only/vulnerable/src/utils/urlValidator.ts",
+          "labeled_lines": [
+            16,
+            25,
+            45
+          ],
+          "role": "guard"
+        },
+        {
+          "upstream_path": "src/tools/fetchUrl.ts",
+          "corpus_path": "corpus/g1-fetcher-mcp-scheme-only/vulnerable/src/tools/fetchUrl.ts",
+          "labeled_lines": [
+            87,
+            128
+          ],
+          "role": "guard-call"
+        },
+        {
+          "upstream_path": "src/services/webContentProcessor.ts",
+          "corpus_path": "corpus/g1-fetcher-mcp-scheme-only/vulnerable/src/services/webContentProcessor.ts",
+          "labeled_lines": [
+            26
+          ],
+          "role": "sink"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "G1"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2026-26118"
+    ],
+    "ghsa": [
+      "GHSA-hhfx-wfvq-7g9c"
+    ],
+    "links": [
+      "https://github.com/advisories/GHSA-hhfx-wfvq-7g9c"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "validateUrlProtocol() (urlValidator.ts:25) checks only that the URL scheme is http:/https: and returns; no host or address check exists. fetchUrl() calls it at line 87, then processPageContent() hands the URL to page.goto (webContentProcessor.ts:26). Same shape as CVE-2026-26118 (Azure MCP Server, scheme-only validation); the advisory is the class anchor, this repo is the live instance. No fix exists upstream as of the pinned SHA.",
+  "last_verified": "2026-09-14"
+}

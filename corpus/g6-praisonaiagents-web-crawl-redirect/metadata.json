@@ -1,0 +1,72 @@
+{
+  "instance_id": "g6-praisonaiagents-web-crawl-redirect",
+  "repo": "MervinPraison/PraisonAI",
+  "repo_url": "https://github.com/MervinPraison/PraisonAI",
+  "license_spdx": "MIT",
+  "language": "python",
+  "tier": "deterministic",
+  "source": "vendored",
+  "states": {
+    "vulnerable": {
+      "sha": "9991e00f5245de182321288918e7ac1add390d0d",
+      "files": [
+        {
+          "upstream_path": "src/praisonai-agents/praisonaiagents/tools/web_crawl_tools.py",
+          "corpus_path": "corpus/g6-praisonaiagents-web-crawl-redirect/vulnerable/src/praisonai-agents/praisonaiagents/tools/web_crawl_tools.py",
+          "labeled_lines": [
+            133,
+            142,
+            149,
+            229
+          ],
+          "role": "both"
+        }
+      ]
+    },
+    "patched": {
+      "sha": "2f9677abb2ea68eab864ee8b6a828fd0141612e1",
+      "files": [
+        {
+          "upstream_path": "src/praisonai-agents/praisonaiagents/tools/web_crawl_tools.py",
+          "corpus_path": "corpus/g6-praisonaiagents-web-crawl-redirect/patched/src/praisonai-agents/praisonaiagents/tools/web_crawl_tools.py",
+          "labeled_lines": [
+            133,
+            146,
+            177,
+            179,
+            196
+          ],
+          "role": "both"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "vulnerable": [
+      "G6",
+      "G8"
+    ],
+    "patched": [
+      "G6",
+      "G8"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2026-55525",
+      "CVE-2026-55523",
+      "CVE-2026-55524"
+    ],
+    "ghsa": [
+      "GHSA-5r34-2g38-6569",
+      "GHSA-8hjw-25cg-g52h",
+      "GHSA-vg6p-v9vm-6fgj"
+    ],
+    "links": [
+      "https://github.com/MervinPraison/PraisonAI/commit/2f9677abb2ea68eab864ee8b6a828fd0141612e1"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "Vulnerable _crawl_with_httpx() fetches with follow_redirects=True (line 142) and the urllib fallback (line 149) also follows redirects; only the entry URL is validated in web_crawl() (lines 213-239). The fix adds _is_safe_crawl_url() and a manual per-hop redirect loop for the httpx path, but the urllib fallback (patched line 196) still follows redirects unvalidated, so G6 persists in the patched state. Both states carry the ALLOW_LOCAL_CRAWL env kill-switch (G8).",
+  "last_verified": "2026-09-14"
+}

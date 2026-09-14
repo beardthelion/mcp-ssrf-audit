@@ -1,0 +1,46 @@
+{
+  "instance_id": "g4-g8-kazuph-mcp-fetch-head",
+  "repo": "kazuph/mcp-fetch",
+  "repo_url": "https://github.com/kazuph/mcp-fetch",
+  "license_spdx": "MIT",
+  "language": "typescript",
+  "tier": "deterministic",
+  "source": "fetched",
+  "states": {
+    "fetched": {
+      "sha": "418e58aad2d0504ebf6ca9ee638feb4b9cbb70c2",
+      "files": [
+        {
+          "upstream_path": "index.ts",
+          "corpus_path": "corpus/_fetched/g4-g8-kazuph-mcp-fetch-head/index.ts",
+          "labeled_lines": [
+            64,
+            128,
+            133,
+            135,
+            138
+          ],
+          "role": "both"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "fetched": [
+      "G4",
+      "G8"
+    ]
+  },
+  "advisory_refs": {
+    "cve": [
+      "CVE-2026-80347"
+    ],
+    "ghsa": [],
+    "links": [
+      "https://github.com/kazuph/mcp-fetch/blob/main/index.ts"
+    ]
+  },
+  "fetched_paths": [],
+  "notes": "HEAD snapshot of kazuph/mcp-fetch showing the CVE-2026-80347 G4 shape still present (net.isIP on the bracketed u.hostname, isSafeUrl line 133) plus the MCP_FETCH_DISABLE_SSRF_GUARD env kill-switch added later (lines 64, 128), which is G8. Fetched rather than vendored because it tracks a moving HEAD; the pinned SHA keeps it stable.",
+  "last_verified": "2026-09-14"
+}
