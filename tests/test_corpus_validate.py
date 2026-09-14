@@ -1,4 +1,4 @@
-"""Unit tests for corpus.py: the corpus-validate harness (R6, R17, R18).
+"""Unit tests for corpus.py: the corpus-validate harness.
 
 Comparison/diff tests inject a fake ``scan_fn`` so no semgrep process is
 needed. The smoke test at the bottom runs the real pipeline (runner +

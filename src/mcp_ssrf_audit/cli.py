@@ -2,8 +2,8 @@
 
 `scan <path>` runs the semgrep rule pack over a local repository, resolves
 each network-sink site against the G0-G10 taxonomy, and prints findings,
-then the manual-audit checklist, then the coverage summary. Exit codes
-(KTD4): 2 operational failure, 1 when any deterministic finding or
+then the manual-audit checklist, then the coverage summary. Exit
+codes: 2 operational failure, 1 when any deterministic finding or
 unrecognized-guard item is present, 0 otherwise.
 """
 

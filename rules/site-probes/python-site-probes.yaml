@@ -1,5 +1,5 @@
 rules:
-  # Site-enumerator and guard-shape probes for the KTD7 layered site
+  # Site-enumerator and guard-shape probes for the layered site
   # resolution. These are search-mode rules: they mark locations, they do
   # not issue verdicts. classify.py groups their hits by enclosing handler
   # (the site extent each handler_source match spans) and resolves each

@@ -1,4 +1,4 @@
-"""Unit tests for classify.py layered site resolution (KTD7).
+"""Unit tests for classify.py layered site resolution.
 
 All inputs are synthetic semgrep JSON payloads; no semgrep invocation.
 """
@@ -106,7 +106,7 @@ def test_weak_class_suppresses_g0():
 
 
 def test_multi_class_site():
-    # R14: a site carries a set of classes.
+    # A site carries a set of classes.
     result = classify_results(
         scan(
             [
@@ -223,7 +223,7 @@ def test_orphan_class_finding_gets_synthetic_site():
 
 
 def test_two_sinks_one_site_grouped():
-    # R16 dedup: two sinks sharing one guarded site produce one site
+    # Dedup: two sinks sharing one guarded site produce one site
     # record naming both sink locations.
     result = classify_results(
         scan(
@@ -260,7 +260,7 @@ def test_nested_handler_extent_prefers_innermost():
 
 
 def test_checklist_quiet_on_empty_scan():
-    # Wholly empty scan: no checklist (KTD6).
+    # Wholly empty scan: no checklist.
     result = classify_results(scan([], scanned=["readme.md"]))
     assert result["checklist"] == []
     assert result["coverage"]["verdict"] == "no_mcp_surface_detected"
@@ -269,7 +269,7 @@ def test_checklist_quiet_on_empty_scan():
 def test_checklist_candidate_counts_as_surface_for_emission():
     # A checklist candidate alone (e.g. a resolver call in a guard-util
     # file with no handler or sink in the scanned slice) still emits, so
-    # checklist-tier corpus instances stay validatable (R17). Checklist
+    # checklist-tier corpus instances stay validatable. Checklist
     # evidence is itself MCP surface: the verdict must not claim "no MCP
     # surface detected" next to a nonempty checklist.
     result = classify_results(scan([checklist_hit("G7", "x.py", 3)]))

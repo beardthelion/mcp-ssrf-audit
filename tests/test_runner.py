@@ -1,4 +1,4 @@
-"""Unit tests for runner.py: the semgrep subprocess boundary (R8, R15).
+"""Unit tests for runner.py: the semgrep subprocess boundary.
 
 Subprocess behavior is tested with a mocked ``subprocess.run``; the
 command-construction and target-walk tests need no semgrep at all.

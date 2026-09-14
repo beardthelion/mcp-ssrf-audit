@@ -1,6 +1,6 @@
 // Synthetic G0 target for CLI-level tests. A minimal MCP-style server whose
 // registerTool handler passes the model-supplied URL straight to fetch.
-// Scanned as data only (R15).
+// Scanned as data only.
 
 declare const server: any;
 declare const z: any;

@@ -1,4 +1,4 @@
-"""Layered site resolution over raw semgrep results (KTD7, R13, R14, R16).
+"""Layered site resolution over raw semgrep results.
 
 Raw semgrep results are inputs, not verdicts. This module groups them by
 enclosing handler (the site) and resolves each site in precedence order:
@@ -55,7 +55,7 @@ RESOLUTION_NO_FLOW = "no_handler_input_flow"
 RESOLUTION_HANDLER_NO_SINK = "handler_no_sink"
 
 # Path segments that flag a finding as living under a test/example tree
-# (R15: flagged, never dropped).
+# (flagged, never dropped).
 _TEST_SEGMENTS = frozenset(
     {
         "test",
@@ -510,9 +510,9 @@ def classify_results(
 
     # Checklist items, deduplicated by (class, path, line). Emitted when
     # anything SSRF-relevant was detected: a recognized handler, a network
-    # sink, or a checklist candidate itself (KTD6 keeps wholly empty scans
-    # quiet, and counting candidates keeps checklist-tier corpus instances
-    # validatable per R17).
+    # sink, or a checklist candidate itself (wholly empty scans
+    # stay quiet, and counting candidates keeps checklist-tier corpus
+    # instances validatable).
     checklist: list[dict] = []
     seen: set[tuple[str, str, int]] = set()
     for r in checklist_hits:
@@ -534,7 +534,7 @@ def classify_results(
         )
     checklist.sort(key=lambda i: (class_sort_key(i["class"]), i["path"], i["line"]))
 
-    # Coverage (R12). "MCP surface" for the verdict means recognized
+    # Coverage. "MCP surface" for the verdict means recognized
     # handlers, network sinks, or checklist candidates -- all three are
     # SSRF-relevant evidence.
     scanned = (scan_data.get("paths") or {}).get("scanned") or []

@@ -1,8 +1,8 @@
 # Synthetic fixture: a network sink inside a function that is not a
 # recognized MCP handler, next to a real handler with no sink. The sink
 # must land on the coverage "outside recognized handlers" line rather
-# than reading as an empty or a guarded scan (R12, KTD7).
-# Not imported or executed by pytest; scanned as data only (R15).
+# than reading as an empty or a guarded scan.
+# Not imported or executed by pytest; scanned as data only.
 
 import requests
 

@@ -25,7 +25,7 @@ def test_scan_unguarded_python_reports_g0(capsys):
 
 
 def test_scan_unguarded_typescript_reports_class(capsys):
-    # The fixture's fetch follows redirects, so KTD7 precedence resolves
+    # The fixture's fetch follows redirects, so the layered precedence resolves
     # the site to G6 rather than the suppressed raw G0.
     code = main(["scan", str(FIXTURES / "g0" / "unguarded-typescript")])
     assert code == 1

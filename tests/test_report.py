@@ -1,4 +1,4 @@
-"""Unit tests for report.py rendering and exit-code mapping (KTD4, R9)."""
+"""Unit tests for report.py rendering and exit-code mapping."""
 
 import json
 
@@ -111,7 +111,7 @@ def test_json_findings_exclude_recognized_complete():
         r, ruleset_version="0.1.0", semgrep_version=None, target="t"
     )
     assert [f["resolution"] for f in doc["findings"]] == ["unrecognized_guard"]
-    # recognized-complete is still named in coverage.sites (R13)
+    # recognized-complete is still named in coverage.sites
     resolutions = {s["resolution"] for s in doc["coverage"]["sites"]}
     assert "recognized_complete" in resolutions
 
@@ -171,7 +171,7 @@ def test_text_ordering_and_sections():
     assert "guard detected, shape unrecognized" in text
     assert "verify: pin it" in text
     assert "not honored" in text
-    # R13: recognized-complete rendered scoped to taxonomy/ruleset versions
+    # recognized-complete rendered scoped to taxonomy/ruleset versions
     assert "known-complete shape set" in text
     assert "g0-g10/v1" in text
     assert "0.1.0" in text

@@ -5,7 +5,7 @@
 # finding by itself; the taint path resolves deterministically per
 # whichever class rules are present (requests.get follows redirects by
 # default, so the site labels G6 once that rule ships).
-# Not imported or executed by pytest; scanned as data only (R15).
+# Not imported or executed by pytest; scanned as data only.
 
 import requests
 import socket

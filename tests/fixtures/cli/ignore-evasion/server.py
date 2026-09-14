@@ -1,7 +1,7 @@
 # Evasion fixture: this directory ships a .semgrepignore that tries to
 # exclude every Python file. The runner passes
 # --x-ignore-semgrepignore-files, so the file is still scanned and the
-# ignore file is listed in the coverage summary (R15).
+# ignore file is listed in the coverage summary.
 # Scanned as data only; never executed.
 
 import requests

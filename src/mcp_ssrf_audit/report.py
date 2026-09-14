@@ -1,4 +1,4 @@
-"""Human text and canonical JSON rendering for scan results (R9, R12, R16, KTD4).
+"""Human text and canonical JSON rendering for scan results.
 
 Layout contract: deterministic findings first (grouped by guard class),
 then unrecognized-guard items, then recognized-complete sites (always
@@ -59,7 +59,7 @@ def actionable_sites(result: dict) -> list[dict]:
 
 
 def exit_code(result: dict) -> int:
-    """KTD4: 2 analysis incomplete, 1 actionable site, 0 otherwise."""
+    """2 analysis incomplete, 1 actionable site, 0 otherwise."""
     if result["coverage"]["verdict"] == "analysis_incomplete":
         return 2
     return 1 if actionable_sites(result) else 0
@@ -72,7 +72,7 @@ def build_json_report(
     semgrep_version: str | None,
     target: str,
 ) -> dict:
-    """Canonical versioned machine output (KTD4, R16)."""
+    """Canonical versioned machine output."""
     return {
         "schema_version": SCHEMA_VERSION,
         "taxonomy_version": TAXONOMY_VERSION,
@@ -151,7 +151,7 @@ def render_text(
                 out.append("    (under a test/example path)")
     out.append("")
 
-    # --- recognized-complete sites, always version-scoped (R13) ---
+    # --- recognized-complete sites, always version-scoped ---
     out.append(
         "Recognized-complete sites (matches the known-complete shape set; "
         f"taxonomy {TAXONOMY_VERSION}, ruleset {ruleset_version})"
@@ -182,7 +182,7 @@ def render_text(
                 out.append("    (under a test/example path)")
     out.append("")
 
-    # --- coverage summary (R12) ---
+    # --- coverage summary ---
     cov = result["coverage"]
     out.append("Coverage")
     out.append("--------")

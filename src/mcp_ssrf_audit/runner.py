@@ -1,6 +1,6 @@
 """Semgrep invocation and JSON parsing for mcp-ssrf-audit.
 
-The runner owns the operational contract (R8, R15):
+The runner owns the operational contract:
 
 - one subprocess call: ``semgrep scan --config <packaged rules> --json``
 - target-controlled ignore mechanisms are disabled: ``--no-git-ignore``
@@ -24,7 +24,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Directories the tool always excludes (R15). Both the bare directory name
+# Directories the tool always excludes. Both the bare directory name
 # and a nested-path glob are passed; semgrep treats --exclude patterns with
 # gitignore-style syntax, and the belt-and-suspenders pair keeps the
 # exclusion working regardless of how the pattern is resolved.
@@ -84,7 +84,7 @@ class ScanRun:
 def default_rules_dir() -> Path:
     """Locate the rule tree.
 
-    The wheel force-includes ``rules/`` as ``mcp_ssrf_audit/rules`` (KTD3);
+    The wheel force-includes ``rules/`` as ``mcp_ssrf_audit/rules``;
     in a source checkout the canonical tree is the repo-root ``rules/``.
     """
     try:

@@ -1,6 +1,6 @@
 rules:
-  # Checklist-tier candidate enumerators for the structural classes
-  # (KTD6). These rules emit candidate sites to verify manually; they never
+  # Checklist-tier candidate enumerators for the structural classes.
+  # These rules emit candidate sites to verify manually; they never
   # emit a verdict. classify.py turns each hit into a checklist item and
   # only prints the checklist when an MCP surface was detected.
   - id: mcp-ssrf-audit-checklist-g7-python

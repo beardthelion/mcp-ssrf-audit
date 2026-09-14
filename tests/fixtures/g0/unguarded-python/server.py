@@ -1,6 +1,6 @@
 # Synthetic G0 target for CLI-level tests. A minimal MCP-style server whose
 # tool handler passes the model-supplied URL straight to requests.get.
-# Not imported or executed by pytest; scanned as data only (R15).
+# Not imported or executed by pytest; scanned as data only.
 
 import requests
 

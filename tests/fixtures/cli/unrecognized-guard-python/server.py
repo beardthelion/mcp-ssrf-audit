@@ -4,7 +4,7 @@
 # complete-guard vocabulary, so the site must resolve to
 # "guard detected, shape unrecognized, manual review" rather than silence
 # or G0.
-# Not imported or executed by pytest; scanned as data only (R15).
+# Not imported or executed by pytest; scanned as data only.
 
 import requests
 

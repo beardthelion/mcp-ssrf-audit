@@ -1,24 +1,24 @@
-"""Corpus-validation harness (F2, R6, R17, R18, KTD5).
+"""Corpus-validation harness.
 
 ``corpus-validate`` runs the packaged rule pack over every labeled corpus
 sample in ``manifest.jsonl`` and compares the expected guard-class set to
 the classes the scan pipeline (runner + classify) actually reports.
 
-Evaluation semantics, per the plan:
+Evaluation semantics:
 
 - Each manifest row is a sample. Its ``expected`` set applies to the
   sample as a whole: an expected class is caught when it is attributed to
   at least one resolved site inside any of the sample's ``corpus_paths``
   files. Per-file attribution is reported for diff-ability.
-- ``expected: ["CLEAN"]`` rows are first-class (R18): any deterministic
+- ``expected: ["CLEAN"]`` rows are first-class: any deterministic
   finding class reported on any of the sample's files is a
   *precision failure*.
 - Non-CLEAN deterministic rows: expected classes absent from the reported
   set are *missed*; reported deterministic classes outside the expected
-  set are *misclassified-extra*. Per the plan's gating rule ("exit
+  set are *misclassified-extra*. By the gating rule ("exit
   nonzero on any miss or precision failure"), a misclassified-extra is
   reported but does not fail the run.
-- ``tier: "checklist"`` rows are validated by checklist emission (R17):
+- ``tier: "checklist"`` rows are validated by checklist emission:
   the row passes when its expected checklist classes appear in the
   emitted manual-audit checklist for the sample's files. Checklist rows
   are reported under their own heading and never mixed into the
@@ -36,7 +36,7 @@ Evaluation semantics, per the plan:
   ``scripts/fetch_corpus.py``. Skips are not failures. A vendored sample
   with missing files is a corpus-integrity error (exit 2).
 
-Exit codes (KTD4 conventions extended to the harness): 0 fully green,
+Exit codes (same contract as the scan command): 0 fully green,
 1 any missed expected class, any CLEAN precision failure, or any missing
 checklist emission, 2 operational failure (bad corpus, missing manifest,
 semgrep failure). Output ordering is deterministic (samples sorted by
@@ -485,7 +485,7 @@ def validate_corpus(
     def count(sample_list, status) -> int:
         return sum(1 for s in sample_list if s["status"] == status)
 
-    # Per-class rollup (F2: misses and misclassifications reported per
+    # Per-class rollup (misses and misclassifications reported per
     # class). Deterministic classes count caught/missed/extra across
     # non-CLEAN samples; checklist classes count emitted/missing.
     det_by_class: dict[str, dict] = {}

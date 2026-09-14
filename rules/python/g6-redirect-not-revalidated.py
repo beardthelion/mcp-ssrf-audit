@@ -101,7 +101,7 @@ async def throw_guard_then_requests(url: str) -> str:
     return requests.get(url).text
 
 
-# Positive + R14 (labels are sets per site): this function carries a literal
+# Positive, multi-class site (a site carries a set of classes): this function carries a literal
 # string blocklist (fires mcp-ssrf-audit-g2-python when the pack runs) and a
 # validated-then-redirect-following fetch (G6 here).
 @mcp.tool()

@@ -1,7 +1,7 @@
 # Synthetic recognized-complete target for CLI-level tests. The handler runs
 # its URL through a complete-guard wrapper (resolve-all + range check +
 # pinned connect) before the outbound request, so G0 stays quiet.
-# Not imported or executed by pytest; scanned as data only (R15).
+# Not imported or executed by pytest; scanned as data only.
 
 import requests
 
