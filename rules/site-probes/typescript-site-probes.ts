@@ -39,3 +39,30 @@ function noSurface(url: string): string {
   // ok: mcp-ssrf-audit-probe-network-sink-typescript
   return render(url);
 }
+
+// Dispatch-method extent: class-based tool registry shape.
+class NavigateTool {
+  // ruleid: mcp-ssrf-audit-probe-handler-source-typescript
+  async execute(args: any, ctx: any) {
+    // ruleid: mcp-ssrf-audit-probe-network-sink-typescript
+    return fetch(args.url);
+  }
+}
+
+// Object-literal dispatch callback (addTool-style registration).
+const registry2 = {
+  name: "fetch",
+  // ruleid: mcp-ssrf-audit-probe-handler-source-typescript
+  execute: async (args: any) => {
+    // ruleid: mcp-ssrf-audit-probe-network-sink-typescript
+    return axios.get(args.url);
+  },
+};
+
+class OtherTool {
+  // ok: mcp-ssrf-audit-probe-handler-source-typescript
+  async execute(payload: any) {
+    // ruleid: mcp-ssrf-audit-probe-network-sink-typescript
+    return fetch(payload.url);
+  }
+}

@@ -17,28 +17,47 @@ rules:
         - docs/source-sink-matrix.md
     # Same registration vocabulary as the G0 source spec. The match spans
     # the decorated function so the hit's line range is the site extent
-    # classify.py uses for the same-function guard/sink join.
-    patterns:
-      - metavariable-regex:
-          metavariable: $DECO
-          regex: '(.*\.)?(tool|call_tool|get_prompt)'
-      - pattern-either:
-          - pattern: |
-              @$DECO(...)
-              def $F(...):
-                ...
-          - pattern: |
-              @$DECO(...)
-              async def $F(...):
-                ...
-          - pattern: |
-              @$DECO
-              def $F(...):
-                ...
-          - pattern: |
-              @$DECO
-              async def $F(...):
-                ...
+    # classify.py uses for the same-function guard/sink join. The second
+    # branch marks dispatch-method extents: a def/async def named like a
+    # tool dispatcher taking an args/params/request parameter, which covers
+    # class-based registries where a registered callback delegates to
+    # `tool.execute(args)` and the sink lives in the method body.
+    pattern-either:
+      - patterns:
+          - metavariable-regex:
+              metavariable: $DECO
+              regex: '(.*\.)?(tool|call_tool|get_prompt)'
+          - pattern-either:
+              - pattern: |
+                  @$DECO(...)
+                  def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO(...)
+                  async def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO
+                  def $F(...):
+                    ...
+              - pattern: |
+                  @$DECO
+                  async def $F(...):
+                    ...
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  async def $M(..., $ARG, ...):
+                    ...
+              - pattern: |
+                  def $M(..., $ARG, ...):
+                    ...
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
 
   - id: mcp-ssrf-audit-probe-network-sink-python
     message: >-

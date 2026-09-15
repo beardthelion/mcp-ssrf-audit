@@ -53,6 +53,25 @@ rules:
                   @$DECO
                   async def $F(..., $ARG, ...):
                     ...
+      # Dispatch-method source: a function or method named like a tool
+      # dispatcher whose parameters include args/params/request. Covers
+      # class-based registries where a registered callback delegates to
+      # `tool.execute(args)` and the sink lives in the method body.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  async def $M(..., $ARG, ...):
+                    ...
+              - pattern-inside: |
+                  def $M(..., $ARG, ...):
+                    ...
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
     # Sinks: unanchored textual checks on the tainted URL/host.
     pattern-sinks:
       # Prefix or suffix test: matches "example.com.evil" style bypasses.

@@ -108,3 +108,30 @@ async function helperFetch(url: string) {
   // ok: mcp-ssrf-audit-g0-typescript
   return fetch(url);
 }
+
+// Dispatch-method source: a class-based tool registry where the CallTool
+// switch delegates to tool.execute(args) and the sink lives in the method
+// body rather than the registration callback.
+class NavigateTool {
+  async execute(args: { url: string }, ctx: any) {
+    // ruleid: mcp-ssrf-audit-g0-typescript
+    return page.goto(args.url);
+  }
+}
+
+// Object-literal dispatch callback (addTool-style registration).
+const registry = {
+  name: "fetch",
+  execute: async (args: { url: string }) => {
+    // ruleid: mcp-ssrf-audit-g0-typescript
+    return fetch(args.url);
+  },
+};
+
+// Negative: same method name but the parameter is not a handler-arg name.
+class OtherTool {
+  async execute(payload: any) {
+    // ok: mcp-ssrf-audit-g0-typescript
+    return fetch(payload.url);
+  }
+}

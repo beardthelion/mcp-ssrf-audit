@@ -42,3 +42,24 @@ def no_surface(url: str) -> str:
     # ok: mcp-ssrf-audit-probe-handler-source-python
     # ok: mcp-ssrf-audit-probe-network-sink-python
     return render(url)
+
+
+# Dispatch-method extent: class-based tool registry shape.
+class FetchTool:
+    # ruleid: mcp-ssrf-audit-probe-handler-source-python
+    async def execute(self, args):
+        # ruleid: mcp-ssrf-audit-probe-network-sink-python
+        return requests.get(args["url"]).text
+
+
+# ruleid: mcp-ssrf-audit-probe-handler-source-python
+def handle_call(args):
+    # ruleid: mcp-ssrf-audit-probe-network-sink-python
+    return requests.get(args["url"]).text
+
+
+class OtherTool:
+    # ok: mcp-ssrf-audit-probe-handler-source-python
+    async def execute(self, payload):
+        # ruleid: mcp-ssrf-audit-probe-network-sink-python
+        return requests.get(payload["url"]).text

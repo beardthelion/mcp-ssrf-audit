@@ -130,3 +130,23 @@ async def literal(url: str) -> str:
 async def helper_fetch(url: str) -> str:
     # ok: mcp-ssrf-audit-g0-python
     return requests.get(url).text
+
+
+# Dispatch-method source: class-based tool registry where the registered
+# callback delegates to tool.execute(args) and the sink lives in the method.
+class FetchTool:
+    async def execute(self, args):
+        # ruleid: mcp-ssrf-audit-g0-python
+        return requests.get(args["url"]).text
+
+
+def handle_call(args):
+    # ruleid: mcp-ssrf-audit-g0-python
+    return requests.get(args["url"]).text
+
+
+# Negative: same method name but the parameter is not a handler-arg name.
+class OtherTool:
+    async def execute(self, payload):
+        # ok: mcp-ssrf-audit-g0-python
+        return requests.get(payload["url"]).text

@@ -104,6 +104,19 @@ def test_scan_checklist_fixture_emits_candidates(capsys):
     assert "[G10]" in out
 
 
+def test_scan_dispatch_method_reports_class(capsys):
+    # Class-based tool registry: the CallTool switch delegates to
+    # tool.execute(args) and the sink lives in the method in another
+    # file. The dispatch-method source makes execute() a handler extent,
+    # so the goto resolves deterministically (G6: redirects followed)
+    # rather than landing on the coverage line.
+    code = main(["scan", str(FIXTURES / "cli" / "dispatch-method")])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "[G6]" in out
+    assert "navigation.ts" in out
+
+
 def test_scan_sink_outside_handler_in_coverage(capsys):
     # The fixture's sink lives in a non-handler function; it must land
     # on the coverage line, not read as a guarded or empty scan.

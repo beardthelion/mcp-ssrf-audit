@@ -30,6 +30,14 @@ taints every value extracted from it (`arguments["url"]`,
 `arguments.get("url")`), so low-level `call_tool`/`get_prompt` handlers are
 covered without enumerating argument names.
 
+A second source shape covers dispatch-style registries: any `def` or
+`async def` named like a tool dispatcher (`execute`, `handle`, `dispatch`,
+`process`, `invoke`, `run`, `call`, and names beginning with those verbs)
+whose parameters include `args`, `arguments`, `params`, `request`, or
+`input`. This covers class-based tool registries where a decorated or
+registered callback delegates to `tool.execute(args)` and the sink lives
+in the method body.
+
 ### TypeScript and JavaScript (`mcp-ssrf-audit-g0-typescript` and later `rules/typescript/*`)
 
 Any parameter of a callback passed to a registration method named one of:
@@ -43,6 +51,16 @@ expression bodies, `function` expressions, and object-destructured parameters
 (`async ({ url }) => ...` and `async ({ url }: T) => ...`). The TypeScript
 rule declares `languages: [typescript, javascript]` and its fixtures run as
 both `.ts` and `.js`.
+
+A second source shape covers dispatch-style registries: any method,
+function declaration, or object-literal callback named like a tool
+dispatcher (`execute`, `handle`, `dispatch`, `process`, `invoke`, `run`,
+`call`, and names beginning with those verbs) whose parameters include
+`args`, `arguments`, `params`, `request`, or `input`. This covers
+class-based registries where a `CallToolRequestSchema` switch delegates to
+`tool.execute(args, context)` and the sink lives inside the method body,
+and `addTool`-style object literals whose `execute:` callback takes
+`args`.
 
 ## Sinks: outbound request calls
 
@@ -146,10 +164,11 @@ than papered over:
   formatter named `public_url`, or a `safe_fetch` that skips range checks)
   produces a false negative.
 - Unlisted shapes are blind spots, not findings: handlers registered through
-  `add_tool`/entry-point lists rather than decorators or registration
-  methods, and network clients not in the sink list (raw `http.request` in
-  Node, `urllib3` directly, `urllib.request.OpenerDirector`), are counted by
-  the coverage summary, not reported as guarded or unguarded.
+  entry-point lists whose callbacks take differently named parameters (the
+  dispatch-method source requires an `args`-style parameter name), and
+  network clients not in the sink list (raw `http.request` in Node,
+  `urllib3` directly, `urllib.request.OpenerDirector`), are counted by the
+  coverage summary, not reported as guarded or unguarded.
 
 ## Fixture contract
 

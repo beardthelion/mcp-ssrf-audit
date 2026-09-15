@@ -65,6 +65,32 @@ rules:
                   $SRV.$REG(..., async ({ ..., $PROP, ... }: $T, ...) => { ... })
               - pattern-inside: |
                   $SRV.$REG(..., ({ ..., $PROP, ... }: $T, ...) => { ... })
+      # Dispatch-method source: a method, function declaration, or
+      # object-literal callback named like a tool dispatcher that takes an
+      # args/params/request parameter. Covers class-based registries where
+      # a CallTool switch delegates to `tool.execute(args, ...)` and the
+      # sink lives inside the method body rather than the callback.
+      - patterns:
+          - pattern: $ARG
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(args|arguments|params|request|input)(\W.*)?$'
+          - pattern-either:
+              - pattern-inside: |
+                  async $M(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  $M(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  async function $M(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  function $M(..., $ARG, ...) { ... }
+              - pattern-inside: |
+                  $M: async (..., $ARG, ...) => { ... }
+              - pattern-inside: |
+                  $M: (..., $ARG, ...) => { ... }
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-zA-Z_0-9]*$'
     pattern-sinks:
       - pattern-either:
           # fetch(url) defaults to redirect:"follow". Suppress the manual
