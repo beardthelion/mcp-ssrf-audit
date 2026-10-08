@@ -145,8 +145,34 @@ def handle_call(args):
     return requests.get(args["url"]).text
 
 
-# Negative: same method name but the parameter is not a handler-arg name.
-class OtherTool:
+# Negative: method on a class that is neither Tool-named nor takes a
+# handler-arg-named parameter. The dispatch source requires an args-named
+# param; the Tool-class source requires a Tool-named class.
+class PayloadRunner:
     async def execute(self, payload):
         # ok: mcp-ssrf-audit-g0-python
         return requests.get(payload["url"]).text
+
+
+# Framework tool-entry source: method on a Tool-named class delivering
+# model args (***REMOVED*** shape).
+class ***REMOVED***:
+    def forward(self, url: str) -> str:
+        # ruleid: mcp-ssrf-audit-g0-python
+        return requests.get(url).text
+
+
+# Framework tool-entry source: **kwargs kwargs-dict arg (crewAI shape),
+# sink on a driver receiver.
+class ***REMOVED***:
+    def _run(self, **kwargs):
+        website_url = kwargs.get("website_url")
+        # ruleid: mcp-ssrf-audit-g0-python
+        return self.driver.get(website_url)
+
+
+# Negative: same method name on a class that is not Tool-named.
+class PlainWorker:
+    def forward(self, url: str) -> str:
+        # ok: mcp-ssrf-audit-g0-python
+        return requests.get(url).text

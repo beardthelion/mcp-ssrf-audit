@@ -59,7 +59,33 @@ def handle_call(args):
 
 
 class OtherTool:
-    # ok: mcp-ssrf-audit-probe-handler-source-python
+    # ruleid: mcp-ssrf-audit-probe-handler-source-python
     async def execute(self, payload):
         # ruleid: mcp-ssrf-audit-probe-network-sink-python
         return requests.get(payload["url"]).text
+
+
+# Framework tool-entry extent: Tool-named class with a forward method.
+class ***REMOVED***:
+    # ruleid: mcp-ssrf-audit-probe-handler-source-python
+    def forward(self, url: str) -> str:
+        # ruleid: mcp-ssrf-audit-probe-network-sink-python
+        return requests.get(url).text
+
+
+# Framework tool-entry extent: _run with **kwargs (crewAI shape) plus a
+# driver.get sink on a driver receiver.
+class ***REMOVED***:
+    # ruleid: mcp-ssrf-audit-probe-handler-source-python
+    def _run(self, **kwargs):
+        website_url = kwargs.get("website_url")
+        # ruleid: mcp-ssrf-audit-probe-network-sink-python
+        return self.driver.get(website_url)
+
+
+# Negative: forward on a non-Tool class is not a handler extent.
+class PlainWorker:
+    # ok: mcp-ssrf-audit-probe-handler-source-python
+    def forward(self, url: str) -> str:
+        # ruleid: mcp-ssrf-audit-probe-network-sink-python
+        return requests.get(url).text

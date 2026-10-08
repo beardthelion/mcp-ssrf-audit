@@ -38,6 +38,17 @@ whose parameters include `args`, `arguments`, `params`, `request`, or
 registered callback delegates to `tool.execute(args)` and the sink lives
 in the method body.
 
+A third source shape covers agent-framework tool entries: any `def` or
+`async def` named like a tool entry (`forward`, `run`, `arun`, `call`,
+`execute`, `invoke`, `process`, and names beginning with those verbs,
+with or without one leading underscore) defined inside a class whose name
+contains `tool` (case-insensitive). Every parameter besides `self`/`cls`
+is a source, including `**kwargs`. This covers ***REMOVED***
+`Tool.forward(self, url)` and crewAI/***REMOVED*** `BaseTool._run(self,
+**kwargs)`, where the framework delivers model-produced arguments
+through a fixed method name rather than a decorator. The class-name
+bound is what keeps `forward`/`run` from tainting arbitrary helpers.
+
 ### TypeScript and JavaScript (`mcp-ssrf-audit-g0-typescript` and later `rules/typescript/*`)
 
 Any parameter of a callback passed to a registration method named one of:
@@ -75,12 +86,14 @@ shapes below. The finding line is the sink call.
 - Bare `urlopen(...)` and `urlretrieve(...)` calls (covers
   `from urllib.request import urlopen`)
 - Client-object calls `<receiver>.<method>(...)` where the receiver name
-  contains `client` or `session` (case-insensitive: `client`,
-  `self.session`, `httpx.AsyncClient()`, `aiohttp.ClientSession()`,
-  `self._client`) and the method is one of `get`, `post`, `put`, `delete`,
-  `head`, `patch`, `options`, `request`, `stream`, `fetch`, `ws_connect`
+  contains `client`, `session`, or `driver` (case-insensitive: `client`,
+  `self.session`, `self.driver`, `httpx.AsyncClient()`,
+  `aiohttp.ClientSession()`, `self._client`) and the method is one of
+  `get`, `post`, `put`, `delete`, `head`, `patch`, `options`, `request`,
+  `stream`, `fetch`, `ws_connect`. The `driver` receiver covers Selenium
+  and framework web drivers (`self.driver.get(url)`).
 - Playwright navigation: `<receiver>.goto(...)` where the receiver name
-  contains `page` or `browser`
+  contains `page`, `browser`, or `driver`
 - Context request clients: `<ctx>.request.<method>(...)` where the method is
   an HTTP verb name (`ctx.request.get` shape)
 
@@ -149,9 +162,13 @@ than papered over:
   the site resolves to unrecognized-guard. Mature codebases will produce
   this verdict often; that is expected, not a miss.
 - Helper-factored sinks. `await safeFetch(url)` where `fetch` is called
-  inside `safeFetch` produces no sink at all at the handler site. Coverage
-  reporting counts handler candidates and sinks separately so this cannot
-  read as an empty scan.
+  inside `safeFetch` produces no sink at all at the handler site. The same
+  applies when a recognized tool-entry method delegates to a private
+  helper (`_run` calling `self._make_request(url)`, which calls
+  `driver.get(url)`): the sink is enumerated but sits outside the handler
+  extent, so it lands in the "outside recognized handlers" review list
+  rather than auto-classifying. Coverage reporting counts handler
+  candidates and sinks separately so this cannot read as an empty scan.
 - Parameter stickiness. A source parameter stays tainted for the whole
   function body: reassigning it (`url = "literal"`) or check-and-throwing on
   it directly (`assert_public_url(url)` then `requests.get(url)`) does not

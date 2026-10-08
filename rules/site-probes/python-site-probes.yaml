@@ -58,6 +58,28 @@ rules:
           - metavariable-regex:
               metavariable: $ARG
               regex: '^(args|arguments|params|request|input)(\W.*)?$'
+      # Framework tool-entry methods: agent frameworks (***REMOVED***
+      # `Tool.forward`, crewAI `BaseTool._run`, ***REMOVED*** `BaseTool._run`)
+      # receive model-produced args through methods on Tool-named classes.
+      # The class-name bound keeps `forward`/`run` from matching arbitrary
+      # helpers. Param source is any arg besides self, including **kwargs.
+      - patterns:
+          - pattern-inside: |
+              class $T(...):
+                ...
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - pattern-either:
+              - pattern: |
+                  async def $M(...):
+                    ...
+              - pattern: |
+                  def $M(...):
+                    ...
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
 
   - id: mcp-ssrf-audit-probe-network-sink-python
     message: >-
@@ -86,7 +108,7 @@ rules:
           - pattern: $R.$M(...)
           - metavariable-regex:
               metavariable: $R
-              regex: '(?i).*(client|session)[a-z_0-9]*'
+              regex: '(?i).*(client|session|driver)[a-z_0-9]*'
           - metavariable-regex:
               metavariable: $M
               regex: '^(get|post|put|delete|head|patch|options|request|stream|fetch|ws_connect)$'
@@ -94,7 +116,7 @@ rules:
           - pattern: $P.goto(...)
           - metavariable-regex:
               metavariable: $P
-              regex: '(?i).*(page|browser)[a-z_0-9]*'
+              regex: '(?i).*(page|browser|driver)[a-z_0-9]*'
       - patterns:
           - pattern: $C.request.$M(...)
           - metavariable-regex:

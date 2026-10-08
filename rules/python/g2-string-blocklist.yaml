@@ -73,6 +73,54 @@ rules:
           - metavariable-regex:
               metavariable: $M
               regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
+      # Framework tool-entry source: agent frameworks (***REMOVED***
+      # `Tool.forward`, crewAI/***REMOVED*** `BaseTool._run`) deliver
+      # model-produced args through methods on Tool-named classes. The
+      # class-name bound keeps the method names from matching arbitrary
+      # helpers. First branch: named params. Second: **kwargs, which
+      # Semgrep binds separately as a ParamDict.
+      - patterns:
+          - pattern: $ARG
+          - pattern-either:
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    async def $M($SELF, ..., $ARG, ...):
+                      ...
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    def $M($SELF, ..., $ARG, ...):
+                      ...
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(?!self$|cls$).*'
+      - patterns:
+          - pattern: $KW
+          - pattern-either:
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    async def $M($SELF, ..., **$KW):
+                      ...
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    def $M($SELF, ..., **$KW):
+                      ...
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+
     # Sink: a tainted value compared against an internal-host literal or a
     # blocklist-named collection. $Y is the check operand across every
     # comparison shape, so a single metavariable-regex covers literal tuples

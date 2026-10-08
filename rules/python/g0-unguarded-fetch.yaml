@@ -72,6 +72,54 @@ rules:
           - metavariable-regex:
               metavariable: $M
               regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
+      # Framework tool-entry source: agent frameworks (***REMOVED***
+      # `Tool.forward`, crewAI/***REMOVED*** `BaseTool._run`) deliver
+      # model-produced args through methods on Tool-named classes. The
+      # class-name bound keeps the method names from matching arbitrary
+      # helpers. First branch: named params. Second: **kwargs, which
+      # Semgrep binds separately as a ParamDict.
+      - patterns:
+          - pattern: $ARG
+          - pattern-either:
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    async def $M($SELF, ..., $ARG, ...):
+                      ...
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    def $M($SELF, ..., $ARG, ...):
+                      ...
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+          - metavariable-regex:
+              metavariable: $ARG
+              regex: '^(?!self$|cls$).*'
+      - patterns:
+          - pattern: $KW
+          - pattern-either:
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    async def $M($SELF, ..., **$KW):
+                      ...
+              - pattern-inside: |
+                  class $T(...):
+                    ...
+                    def $M($SELF, ..., **$KW):
+                      ...
+          - metavariable-regex:
+              metavariable: $T
+              regex: '(?i).*tool'
+          - metavariable-regex:
+              metavariable: $M
+              regex: '^(forward|_?run|_?arun|_?call|_?execute|invoke|process)[a-z_0-9]*$'
+
     # Sinks: outbound request calls listed in docs/source-sink-matrix.md.
     # Client-object method calls are recognized by receiver name
     # (client/session), which is the documented heuristic for
@@ -91,7 +139,7 @@ rules:
               - pattern: $R.$M(...)
               - metavariable-regex:
                   metavariable: $R
-                  regex: '(?i).*(client|session)[a-z_0-9]*'
+                  regex: '(?i).*(client|session|driver)[a-z_0-9]*'
               - metavariable-regex:
                   metavariable: $M
                   regex: '^(get|post|put|delete|head|patch|options|request|stream|fetch|ws_connect)$'
@@ -99,7 +147,7 @@ rules:
               - pattern: $P.goto(...)
               - metavariable-regex:
                   metavariable: $P
-                  regex: '(?i).*(page|browser)[a-z_0-9]*'
+                  regex: '(?i).*(page|browser|driver)[a-z_0-9]*'
           - patterns:
               - pattern: $C.request.$M(...)
               - metavariable-regex:
