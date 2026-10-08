@@ -19,8 +19,8 @@ rules:
       impact: HIGH
       technology: [mcp, typescript, javascript]
       advisory_refs:
-        - "***REMOVED***/***REMOVED*** isPrivateIp: exact localhost/127.0.0.1 compares plus a dotted-quad regex, unwired into the fetch path (no advisory; live target)"
-        - "***REMOVED***/***REMOVED*** validateUrl: BLOCKED_HOSTNAMES + dotted-quad PRIVATE_IPV4 + narrow LOOPBACK_IPV6 regexes (no advisory; live target)"
+        - "exact localhost/127.0.0.1 compares plus a dotted-quad regex, unwired into the fetch path (no public advisory)"
+        - "BLOCKED_HOSTNAMES-style literal list plus dotted-quad and narrow IPv6 regexes (no public advisory)"
       references:
         - docs/source-sink-matrix.md
     # Fires on the blocklist-check expression. Gated on a host context: an

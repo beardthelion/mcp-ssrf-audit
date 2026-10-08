@@ -71,8 +71,9 @@ rules:
           - metavariable-regex:
               metavariable: $M
               regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
-      # Framework tool-entry source: agent frameworks (***REMOVED***
-      # `Tool.forward`, crewAI/***REMOVED*** `BaseTool._run`) deliver
+      # Framework tool-entry source: agent frameworks that deliver
+      # model-produced args through `Tool.forward`/`BaseTool._run`-style
+      # methods on Tool-named classes deliver
       # model-produced args through methods on Tool-named classes. The
       # class-name bound keeps the method names from matching arbitrary
       # helpers. First branch: named params. Second: **kwargs, which

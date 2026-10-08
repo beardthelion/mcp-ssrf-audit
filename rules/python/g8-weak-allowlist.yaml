@@ -22,7 +22,7 @@ rules:
       impact: HIGH
       technology: [mcp, python]
       advisory_refs:
-        - "shape reference: ***REMOVED***/***REMOVED*** _is_url_match uses url.startswith(pattern) for '://'-patterns and bare host equality (no CVE; live target, corpus ***REMOVED***)"
+        - "shape reference: an allowlist that uses url.startswith(pattern) for '://'-patterns and bare host equality otherwise (no public advisory)"
       references:
         - docs/source-sink-matrix.md
     # Source: any parameter of a function registered as an MCP entry point
@@ -72,8 +72,9 @@ rules:
           - metavariable-regex:
               metavariable: $M
               regex: '^(execute|handle|dispatch|process|invoke|run|call)[a-z_0-9]*$'
-      # Framework tool-entry source: agent frameworks (***REMOVED***
-      # `Tool.forward`, crewAI/***REMOVED*** `BaseTool._run`) deliver
+      # Framework tool-entry source: agent frameworks that deliver
+      # model-produced args through `Tool.forward`/`BaseTool._run`-style
+      # methods on Tool-named classes deliver
       # model-produced args through methods on Tool-named classes. The
       # class-name bound keeps the method names from matching arbitrary
       # helpers. First branch: named params. Second: **kwargs, which
@@ -194,7 +195,7 @@ rules:
       An allowlist/blocklist-shaped name (allow*, permit*, block*, deny*,
       prohibit*, whitelist) is declared with an empty or off default
       (None, [], False, Field(default=...)) (G8: guard off by default).
-      ***REMOVED*** ships allowed_domains defaulting to None, which makes the
+      a tool can ship an allowed_domains-style list defaulting to None, which makes the
       guard a no-op until an operator opts in.
     severity: WARNING
     languages: [python]
@@ -209,8 +210,8 @@ rules:
       impact: MEDIUM
       technology: [mcp, python]
       advisory_refs:
-        - "shape reference: ***REMOVED***/***REMOVED*** allowed_domains and block_ip_addresses default to None/False so _is_url_allowed returns True for everything (no CVE; live target, corpus ***REMOVED***)"
-        - "shape reference: ***REMOVED***/***REMOVED*** requests tool requires allow_dangerous_requests opt-in rather than guarding by default (no CVE; live target)"
+        - "shape reference: allowlist/blocklist fields defaulting to None/False so the guard returns True for everything (no public advisory)"
+        - "shape reference: a requests tool requiring an explicit dangerous-requests opt-in rather than guarding by default (no public advisory)"
       references:
         - docs/source-sink-matrix.md
     # Search mode: the declaration is the finding. metavariable-regex is a

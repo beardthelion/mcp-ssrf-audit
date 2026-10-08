@@ -58,8 +58,8 @@ rules:
           - metavariable-regex:
               metavariable: $ARG
               regex: '^(args|arguments|params|request|input)(\W.*)?$'
-      # Framework tool-entry methods: agent frameworks (***REMOVED***
-      # `Tool.forward`, crewAI `BaseTool._run`, ***REMOVED*** `BaseTool._run`)
+      # Framework tool-entry methods: agent frameworks that name their
+      # entry `Tool.forward` or `BaseTool._run`/`_arun`
       # receive model-produced args through methods on Tool-named classes.
       # The class-name bound keeps `forward`/`run` from matching arbitrary
       # helpers. Param source is any arg besides self, including **kwargs.

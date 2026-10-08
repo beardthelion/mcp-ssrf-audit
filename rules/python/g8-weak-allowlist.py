@@ -28,7 +28,7 @@ async def prefix_allowlist(url: str) -> str:
 
 
 # Positive: suffix allowlist on the host. endswith("example.com") matches
-# "notexample.com" (***REMOVED*** _is_url_match domain-only shapes reduce to
+# "notexample.com" (domain-only allowlist shapes reduce to
 # this class of textual check).
 @server.call_tool()
 async def suffix_allowlist(name: str, arguments: dict):
@@ -97,9 +97,8 @@ async def env_killswitch_variants(url: str) -> str:
     raise ValueError("blocked")
 
 
-# Positive: allowlist defaulting to empty/None (***REMOVED*** profile shape:
-# allowed_domains defaults to None and _is_url_allowed returns True when it
-# is unset).
+# Positive: allowlist defaulting to empty/None (the list defaults to None
+# and the guard returns True when it is unset).
 # ruleid: mcp-ssrf-audit-g8-python-default-off
 allowed_domains: list = None
 # ruleid: mcp-ssrf-audit-g8-python-default-off

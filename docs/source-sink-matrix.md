@@ -43,10 +43,10 @@ A third source shape covers agent-framework tool entries: any `def` or
 `execute`, `invoke`, `process`, and names beginning with those verbs,
 with or without one leading underscore) defined inside a class whose name
 contains `tool` (case-insensitive). Every parameter besides `self`/`cls`
-is a source, including `**kwargs`. This covers ***REMOVED***
-`Tool.forward(self, url)` and crewAI/***REMOVED*** `BaseTool._run(self,
-**kwargs)`, where the framework delivers model-produced arguments
-through a fixed method name rather than a decorator. The class-name
+is a source, including `**kwargs`. This covers agent frameworks that
+deliver model-produced arguments through a fixed method name on a
+tool class (`forward(self, url)`, `_run(self, **kwargs)`) rather than
+a decorator. The class-name
 bound is what keeps `forward`/`run` from tainting arbitrary helpers.
 
 ### TypeScript and JavaScript (`mcp-ssrf-audit-g0-typescript` and later `rules/typescript/*`)

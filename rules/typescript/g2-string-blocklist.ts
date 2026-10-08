@@ -6,7 +6,7 @@
 declare function dnsLookupAll(h: string): Promise<{ address: string }[]>;
 declare function is_ip_private(h: string): boolean;
 
-// Positive: the ***REMOVED***/***REMOVED*** shape. Exact compares plus a
+// Positive: exact compares plus a
 // dotted-quad regex, nothing else.
 export function isPrivateIp(url: string): boolean {
   const urlObj = new URL(url);
@@ -25,7 +25,7 @@ export function isPrivateIp(url: string): boolean {
   return false;
 }
 
-// Positive: ***REMOVED*** shape. Blocklist regexes tested against the
+// Positive: blocklist regexes tested against the
 // lowercased hostname.
 const BLOCKED_HOSTNAMES = /^(localhost|.*\.local|.*\.internal)$/i;
 const PRIVATE_IPV4 = /^(127\.\d+\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+\.\d+)$/;

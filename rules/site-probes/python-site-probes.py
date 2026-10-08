@@ -66,16 +66,16 @@ class OtherTool:
 
 
 # Framework tool-entry extent: Tool-named class with a forward method.
-class ***REMOVED***:
+class ReadWebpageTool:
     # ruleid: mcp-ssrf-audit-probe-handler-source-python
     def forward(self, url: str) -> str:
         # ruleid: mcp-ssrf-audit-probe-network-sink-python
         return requests.get(url).text
 
 
-# Framework tool-entry extent: _run with **kwargs (crewAI shape) plus a
+# Framework tool-entry extent: _run with **kwargs (BaseTool._run shape) plus a
 # driver.get sink on a driver receiver.
-class ***REMOVED***:
+class WebDriverScrapeTool:
     # ruleid: mcp-ssrf-audit-probe-handler-source-python
     def _run(self, **kwargs):
         website_url = kwargs.get("website_url")

@@ -16,7 +16,7 @@ server = None
 
 
 # Positive: membership in a literal tuple of internal names/IPs
-# (***REMOVED***/***REMOVED*** isPrivateIp shape).
+# (literal-tuple private-name blocklist shape).
 @mcp.tool()
 async def blocklist_tuple(url: str) -> str:
     host = urlparse(url).hostname

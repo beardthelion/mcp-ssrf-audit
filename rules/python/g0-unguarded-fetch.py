@@ -155,16 +155,16 @@ class PayloadRunner:
 
 
 # Framework tool-entry source: method on a Tool-named class delivering
-# model args (***REMOVED*** shape).
-class ***REMOVED***:
+# model args (Tool.forward shape).
+class ReadWebpageTool:
     def forward(self, url: str) -> str:
         # ruleid: mcp-ssrf-audit-g0-python
         return requests.get(url).text
 
 
-# Framework tool-entry source: **kwargs kwargs-dict arg (crewAI shape),
+# Framework tool-entry source: **kwargs kwargs-dict arg (BaseTool._run shape),
 # sink on a driver receiver.
-class ***REMOVED***:
+class WebDriverScrapeTool:
     def _run(self, **kwargs):
         website_url = kwargs.get("website_url")
         # ruleid: mcp-ssrf-audit-g0-python
