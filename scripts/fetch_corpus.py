@@ -10,7 +10,7 @@ installed; it is written to disk as data only.
 
 Usage:
     python3 scripts/fetch_corpus.py            # materialize all fetched instances
-    python3 scripts/fetch_corpus.py --only ***REMOVED***
+    python3 scripts/fetch_corpus.py --only g4-g8-kazuph-mcp-fetch-head
     python3 scripts/fetch_corpus.py --check    # verify SHAs + materialization, no downloads
     python3 scripts/fetch_corpus.py --emit-expected   # regenerate corpus/EXPECTEDRESULTS.csv
 

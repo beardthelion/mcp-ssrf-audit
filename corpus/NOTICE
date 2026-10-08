@@ -16,10 +16,6 @@ metadata.json, redistributed under their upstream licenses):
   License: MIT
   Instance: g1-fetcher-mcp-scheme-only
 
-- ***REMOVED***/***REMOVED***
-  License: MIT
-  Instance: ***REMOVED***
-
 - MervinPraison/PraisonAI (praisonaiagents package)
   License: MIT
   Instances: g3-praisonaiagents-spider-hostname,
@@ -37,21 +33,13 @@ metadata.json, redistributed under their upstream licenses):
   License: MIT
   Instance: g5-auth-fetch-mcp-ipv6-normalization
 
-- ***REMOVED***/***REMOVED***
-  License: MIT
-  Instance: ***REMOVED***
-
 - sooperset/mcp-atlassian
   License: MIT
   Instance: checklist-mcp-atlassian-g7
 
 - crewAIInc/crewAI (crewai-tools package)
   License: MIT
-  Instances: ***REMOVED***, clean-crewai-scrape-website-tool
-
-- ***REMOVED***/***REMOVED***
-  License: MIT
-  Instance: ***REMOVED***
+  Instance: clean-crewai-scrape-website-tool
 
 - zcaceres/fetch-mcp
   License: MIT
@@ -59,9 +47,5 @@ metadata.json, redistributed under their upstream licenses):
 
 Fetched-only instances (not vendored; see each metadata.json):
 
-- ***REMOVED***/***REMOVED*** (no declared license)
 - kazuph/mcp-fetch HEAD snapshot (MIT)
 - firecrawl/firecrawl safeFetch.ts (AGPL-3.0)
-- ***REMOVED***/***REMOVED*** (MIT)
-- ***REMOVED*** (CC-BY-4.0)
-- ***REMOVED***/***REMOVED*** (MIT)
