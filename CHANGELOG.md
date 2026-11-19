@@ -7,6 +7,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Removed
+
+- 1 third-party corpus instance withdrawn from the labeled corpus.
+
 ### Added
 
 - `mcp-ssrf-audit scan <path>` CLI: runs the packaged Semgrep rule pack over

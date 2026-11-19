@@ -37,10 +37,6 @@ metadata.json, redistributed under their upstream licenses):
   License: MIT
   Instance: checklist-mcp-atlassian-g7
 
-- crewAIInc/crewAI (crewai-tools package)
-  License: MIT
-  Instance: clean-crewai-scrape-website-tool
-
 - zcaceres/fetch-mcp
   License: MIT
   Instance: clean-zcaceres-fetch-mcp

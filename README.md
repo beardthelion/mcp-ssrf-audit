@@ -241,7 +241,6 @@ labels give the pinned SHA (8 chars) and expected class set. Full detail lives i
 | g6-praisonaiagents-web-crawl-redirect | MervinPraison/PraisonAI | vuln 9991e00f (G6+G8); patched 2f9677ab (G6+G8) | CVE-2026-55525, CVE-2026-55523, CVE-2026-55524 | MIT | vendored |
 | checklist-mcp-atlassian-g7 | sooperset/mcp-atlassian | vuln 52b9b099 (G7); patched 5cd697df (G7) | CVE-2026-27826 / GHSA-7r34-79r5-rcc9 | MIT | vendored |
 | clean-zcaceres-fetch-mcp | zcaceres/fetch-mcp | guarded 1ddb1a59 (CLEAN) | none | MIT | vendored |
-| clean-crewai-scrape-website-tool | crewAIInc/crewAI | guarded 894898f8 (CLEAN) | none | MIT | vendored |
 | clean-firecrawl-safe-fetch | firecrawl/firecrawl | fetched b3cc08da (CLEAN) | none | AGPL-3.0 | fetched |
 
 ## Development
