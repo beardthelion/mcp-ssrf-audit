@@ -25,23 +25,44 @@ repository against the taxonomy.
 
 ## Install and run
 
+Not published to PyPI. The [v0.1.0 release](https://github.com/beardthelion/mcp-ssrf-audit/releases/tag/v0.1.0) carries a wheel, an sdist and the single-file rule bundle `mcp-ssrf-audit.yaml`. Or run it straight from GitHub:
+
 ```sh
-uvx mcp-ssrf-audit scan /path/to/cloned/repo
+uvx --from git+https://github.com/beardthelion/mcp-ssrf-audit mcp-ssrf-audit scan /path/to/cloned/repo
 ```
 
-or install first and keep the entry point:
+or install it and keep the entry point:
 
 ```sh
-pipx install mcp-ssrf-audit
+pipx install git+https://github.com/beardthelion/mcp-ssrf-audit
 mcp-ssrf-audit scan /path/to/cloned/repo
 ```
 
 From a source checkout:
 
 ```sh
+git clone https://github.com/beardthelion/mcp-ssrf-audit
+cd mcp-ssrf-audit
 pipx install .
 mcp-ssrf-audit scan /path/to/cloned/repo
 ```
+
+Example on a corpus instance (a TypeScript fetch server whose only check is a protocol allowlist):
+
+```
+$ mcp-ssrf-audit scan corpus/g1-fetcher-mcp-scheme-only
+mcp-ssrf-audit 0.1.0 scan of corpus/g1-fetcher-mcp-scheme-only (semgrep 1.177.0)
+
+Deterministic findings
+----------------------
+  [G1] scheme-only validation
+    corpus/g1-fetcher-mcp-scheme-only/vulnerable/src/utils/urlValidator.ts:45  (if (!ALLOWED_PROTOCOLS.includes(parsedUrl.protocol)) {)
+...
+$ echo $?
+1
+```
+
+Semgrep prints its own progress banner to stderr before the report.
 
 `scan` flags: `--json` (versioned machine output), `--timeout SECONDS`
 (per-file Semgrep analysis timeout, default 30). `--version` prints the
@@ -132,8 +153,8 @@ detection boundary; every rule cites it.
 
 ## Consumption modes
 
-- CLI (above): `uvx mcp-ssrf-audit scan <repo>`, or `pipx install .` from a
-  checkout. The wheel force-includes `rules/`, so the installed entry point
+- CLI (above): `uvx --from git+https://github.com/beardthelion/mcp-ssrf-audit
+  mcp-ssrf-audit scan <repo>`, or `pipx install .` from a checkout. The wheel force-includes `rules/`, so the installed entry point
   needs no extra rule configuration.
 - Raw rule pack from a checkout: `semgrep --config rules/ <repo>` or
   `semgrep scan --config rules/ --json <repo>`. Note the caveat under
@@ -230,6 +251,17 @@ test rules/` (the co-located `ruleid:`/`ok:` fixtures are the executable
 contract for the matrix), `pytest`, and a check that nothing under
 `corpus/` is collected, across the pinned Semgrep floor and latest. It also
 builds the `dist/mcp-ssrf-audit.yaml` bundle.
+
+Local run: `pip install -e '.[test]' && pytest -q`, and
+`mcp-ssrf-audit corpus-validate` for the corpus gate.
+
+## Related tools
+
+- [ssrf-guard-audit](https://github.com/beardthelion/ssrf-guard-audit): the same G0-G10 guard-completeness approach for any Python or TypeScript code, not only MCP handlers
+- [path-guard-audit](https://github.com/beardthelion/path-guard-audit): guard completeness for filesystem and archive path checks
+- [dyetrace](https://github.com/beardthelion/dyetrace): `dyetrace egress` proves a static SSRF candidate at runtime against a live MCP server
+- [egress-plane](https://github.com/beardthelion/egress-plane): inventory of every outbound route in a repo
+- [redpen-eval](https://github.com/beardthelion/redpen-eval): grades AI code reviewers on CVE-derived cases
 
 ## License
 
